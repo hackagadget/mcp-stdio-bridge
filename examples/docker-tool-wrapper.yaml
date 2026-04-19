@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Unlicense
+# Example: Wrapping tools with custom environment variables
+# Mode: command-wrapper
+# Use case: Ensure tools like 'npm' or 'git' have a dedicated HOME for storage.
+
+mode: "command-wrapper"
+transport: "stdio"
+
+wrapped_commands:
+  - name: "npm_list"
+    description: "List global npm packages."
+    command: "npm list -g"
+    # Provide a dedicated HOME so npm can store its cache safely
+    env:
+      HOME: "/app/data/npm-home"
+      npm_config_loglevel: "warn"
+    timeout: 30
+
+  - name: "custom_service_check"
+    description: "Check status of a custom backend service."
+    command: "/usr/local/bin/check-service"
+    # Pass an internal API endpoint and token ONLY to this tool
+    env:
+      SERVICE_ENDPOINT: "http://internal.service.local:9090"
+      SERVICE_TOKEN: "internal-secret-token"
+    timeout: 10

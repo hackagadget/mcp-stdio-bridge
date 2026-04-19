@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Unlicense
+# Example: Exposing WP-CLI as MCP Tools (Opt-in Security)
+# Mode: command-wrapper
+# Use case: Manage WordPress sites using a mix of Allowlists and Denylists.
+
+mode: "command-wrapper"
+transport: "sse"
+port: 8080
+
+wrapped_commands:
+  - name: "wp_plugin"
+    description: "List, status, activate, or deactivate plugins."
+    command: "wp plugin"
+    # Denylist approach: Allow everything EXCEPT destructive actions.
+    forbidden_args:
+      - "uninstall"
+      - "delete"
+    timeout: 60
+
+  - name: "wp_theme"
+    description: "List, status, or manage themes."
+    command: "wp theme"
+    forbidden_args:
+      - "delete"
+    timeout: 30
+
+  - name: "wp_option"
+    description: "Get or list site options."
+    command: "wp option"
+    # Allowlist approach (Opt-in): ONLY allow read operations.
+    allowed_args:
+      - "get"
+      - "list"
+    timeout: 30
+
+  - name: "wp_site"
+    description: "Check site status or information."
+    command: "wp site"
+    allowed_args:
+      - "list"
+      - "size"
+      - "list --json"
+    timeout: 30
+
+  - name: "wp_db_check"
+    description: "Check the database for errors/integrity."
+    command: "wp db check"
+    # Empty allowed_args means ONLY the base command is permitted.
+    allowed_args: []
+    timeout: 120

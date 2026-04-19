@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP Stdio Bridge Configuration",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["proxy", "command-wrapper"],
+      "default": "proxy",
+      "description": "The operation mode of the bridge."
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["sse", "stdio"],
+      "default": "sse",
+      "description": "The transport protocol to use."
+    },
+    "host": {
+      "type": "string",
+      "default": "0.0.0.0",
+      "description": "The host to bind the SSE server to."
+    },
+    "port": {
+      "type": "integer",
+      "default": 8000,
+      "description": "The port to bind the SSE server to."
+    },
+    "command": {
+      "type": "string",
+      "description": "The command to run in proxy mode."
+    },
+    "wrapped_commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "command": { "type": "string" },
+          "forbidden_args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Prefixes of arguments that are blocked for security (opt-out)."
+          },
+          "forbidden_patterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Regex patterns that are blocked for security (opt-out)."
+          },
+          "allowed_args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Prefixes of arguments that are exclusively allowed (opt-in)."
+          },
+          "allowed_patterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Regex patterns that are exclusively allowed (opt-in)."
+          },
+          "cwd": { "type": "string" },
+          "env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Environment variables to set for this tool."
+          },
+          "timeout": { "type": "integer", "default": 30 }
+        },
+        "required": ["name", "description", "command"]
+      }
+    },
+    "api_key": { "type": ["string", "null"], "default": null },
+    "max_connections": { "type": "integer", "default": 10 },
+    "max_message_size": { "type": "integer", "default": 1048576 },
+    "verbose": { "type": "boolean", "default": false },
+    "cors_origins": { "type": "array", "items": { "type": "string" }, "default": ["*"] },
+    "ssl_keyfile": { "type": ["string", "null"] },
+    "ssl_certfile": { "type": ["string", "null"] },
+    "ssl_keyfile_password": { "type": ["string", "null"] },
+    "ssl_ca_certs": { "type": ["string", "null"] },
+    "ssl_crlfile": { "type": ["string", "null"] },
+    "ssl_client_cert_required": { "type": "boolean", "default": false },
+    "ssl_protocol": { "type": "string", "enum": ["TLSv1_2", "TLSv1_3"], "default": "TLSv1_2" },
+    "ssl_ciphers": { "type": "string" },
+    "hsts": { "type": "boolean", "default": false },
+    "security_headers": { "type": "boolean", "default": true },
+    "logging_level": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "INFO" },
+    "logging_config": { "type": ["string", "null"] },
+    "idle_timeout": { "type": "integer", "default": 3600 },
+    "env_allowlist": { "type": ["array", "null"], "items": { "type": "string" } },
+    "env_denylist": { "type": "array", "items": { "type": "string" } }
+  },
+  "oneOf": [
+    { "required": ["command"], "properties": { "mode": { "const": "proxy" } } },
+    { "required": ["wrapped_commands"], "properties": { "mode": { "const": "command-wrapper" } } }
+  ],
+  "additionalProperties": false
+}

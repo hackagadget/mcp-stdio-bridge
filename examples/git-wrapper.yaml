@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Unlicense
+# Example: Exposing Git Operations (Allowlisted)
+# Mode: command-wrapper
+# Use case: Provide read-only git status and log to local clients.
+
+mode: "command-wrapper"
+transport: "stdio"
+
+wrapped_commands:
+  - name: "git_status"
+    description: "Check the current status of the repository"
+    command: "git status"
+    # Allowlist empty list to ensure ONLY 'git status' (no flags) is allowed.
+    allowed_args: []
+    timeout: 10
+
+  - name: "git_log"
+    description: "View recent commit history"
+    command: "git log"
+    # Opt-in to specific view formats only
+    allowed_args:
+      - "--oneline -n 10"
+      - "--oneline -n 20"
+      - "-n 5"
+    timeout: 10
+
+  - name: "git_diff_stat"
+    description: "View summary of unstaged changes"
+    command: "git diff"
+    allowed_args:
+      - "--stat"
+    timeout: 30

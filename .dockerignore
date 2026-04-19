@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Unlicense
+.git
+.pytest_cache
+.coverage
+__pycache__
+*.pyc
+.venv
+venv
+Lib
+Scripts
+Include
+mcp_stdio_bridge.egg-info
+config.yaml
+*.bak

@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Unlicense
+# Example: Advanced Regex Security Patterns
+# Mode: command-wrapper
+# Use case: Showcase granular control using regex allowlists and denylists.
+
+mode: "command-wrapper"
+transport: "stdio"
+
+wrapped_commands:
+  - name: "safe_ls"
+    description: "List files in specific directories only."
+    command: "ls"
+    # ONLY allow listing files in /tmp or /var/logs using regex
+    allowed_patterns:
+      - "^-l /tmp/.*"
+      - "^-lh /var/logs/.*"
+    timeout: 10
+
+  - name: "safe_grep"
+    description: "Search logs for specific patterns."
+    command: "grep"
+    # ONLY allow grepping for 'ERROR' or 'WARNING' in log files
+    allowed_patterns:
+      - "^-i '(error|warning)' /var/log/.*\\.log$"
+    timeout: 30
+
+  - name: "restricted_cat"
+    description: "Read non-sensitive files."
+    command: "cat"
+    # Denylist approach using Regex: block sensitive system files
+    forbidden_patterns:
+      - "/etc/(passwd|shadow|ssh/.*)"
+      - "\\.\\./.*" # Block directory traversal
+    timeout: 5
+
+  - name: "safe_ping"
+    description: "Ping internal hosts only."
+    command: "ping"
+    # ONLY allow pinging local 192.168.x.x addresses
+    allowed_patterns:
+      - "^-c \\d+ 192\\.168\\.\\d+\\.\\d+$"
+    timeout: 20

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Unlicense
+
+host: "127.0.0.1"
+port: 8000
+# Example command: can be a local script or an SSH connection
+command: "python path/to/your/mcp_server.py"
+# command: "ssh -s user@host mcp-subsystem"
+verbose: false
+
+# Optional: Add an API key for authentication
+# api_key: "your-secret-api-key"
+
+# Optional: SSL/HTTPS configuration
+# ssl_keyfile: "path/to/key.pem"
+# ssl_certfile: "path/to/cert.pem"
+# ssl_keyfile_password: "your-key-password"
+# ssl_ca_certs: "path/to/ca.pem"
+# ssl_crlfile: "path/to/crl.pem"
+# ssl_client_cert_required: true
+# ssl_protocol: "TLSv1_3"
+# ssl_ciphers: "ECDHE+AESGCM:ECDHE+CHACHA20"
+# hsts: true
+# security_headers: true

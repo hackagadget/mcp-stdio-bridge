@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: Unlicense
+
+# Python / Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / Build
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Local venv files (when repo is inside venv)
+Lib/
+Include/
+Scripts/
+pyvenv.cfg
+
+# Tooling
+.mypy_cache/
+.pytest_cache/
+.ropeproject
+.coverage
+htmlcov/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.netrw*
+*~
+\#*\#
+.\#*
+
+# Project specific
+config.yaml
+*.bak
+*,cover
+
+# AI/Project artifacts
+GEMINI.local.md
+CONVERSATION_HISTORY.md
+implementation_plan.md
+settings.local.json
+task.md
+walkthrough.md

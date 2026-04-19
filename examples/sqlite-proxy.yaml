@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Unlicense
+# Example: Bridging the SQLite MCP Server
+# Mode: proxy
+# Use case: Securely expose a local SQLite database to a remote client over SSE.
+
+mode: "proxy"
+transport: "sse"
+port: 8080
+
+# The command should point to the target MCP server executable
+# In this case, we use 'npx' to run the official SQLite server.
+command: "npx @modelcontextprotocol/server-sqlite --db /path/to/your/database.db"
+
+api_key: "secure-api-key-here"
+verbose: true
+max_connections: 5
