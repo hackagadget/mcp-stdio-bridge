@@ -2,7 +2,7 @@
 
 [project]
 name = "mcp-stdio-bridge"
-version = "1.0.0"
+version = "1.0.1"
 description = "A generic MCP SSE <-> Stdio bridge with advanced security and SSL/TLS support."
 license = { text = "Unlicense" }
 classifiers = [

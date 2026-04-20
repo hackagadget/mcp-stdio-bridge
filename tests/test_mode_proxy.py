@@ -395,6 +395,57 @@ async def test_activity_monitor() -> None:
         await monitor_eof.__anext__()
 
 @pytest.mark.anyio
+async def test_activity_monitor_receive_nowait() -> None:
+    """Test ActivityMonitor.receive_nowait updates last_activity (lines 31-33)."""
+    send, receive = anyio.create_memory_object_stream[str](1)
+    monitor = ActivityMonitor(receive)
+    await send.send("hello")
+    old_time = monitor.last_activity
+    await anyio.sleep(0.05)
+    val = monitor.receive_nowait()
+    assert val == "hello"
+    assert monitor.last_activity >= old_time
+
+
+@pytest.mark.anyio
+async def test_activity_monitor_close() -> None:
+    """Test ActivityMonitor.close delegates to the underlying stream (line 37)."""
+    send, receive = anyio.create_memory_object_stream[str](1)
+    monitor = ActivityMonitor(receive)
+    monitor.close()
+    with pytest.raises((anyio.ClosedResourceError, anyio.EndOfStream)):
+        await monitor.receive()
+
+
+@pytest.mark.anyio
+async def test_activity_monitor_aclose() -> None:
+    """Test ActivityMonitor.aclose delegates to the underlying stream (line 41)."""
+    send, receive = anyio.create_memory_object_stream[str](1)
+    monitor = ActivityMonitor(receive)
+    await monitor.aclose()
+    with pytest.raises((anyio.ClosedResourceError, anyio.EndOfStream)):
+        await monitor.receive()
+
+
+@pytest.mark.anyio
+async def test_activity_monitor_statistics() -> None:
+    """Test ActivityMonitor.statistics returns stream stats (line 45)."""
+    send, receive = anyio.create_memory_object_stream[str](2)
+    monitor = ActivityMonitor(receive)
+    await send.send("a")
+    stats = monitor.statistics()
+    assert stats.current_buffer_used == 1
+
+
+@pytest.mark.anyio
+async def test_activity_monitor_aiter() -> None:
+    """Test ActivityMonitor.__aiter__ returns self (line 48)."""
+    _, receive = anyio.create_memory_object_stream[str](1)
+    monitor = ActivityMonitor(receive)
+    assert monitor.__aiter__() is monitor
+
+
+@pytest.mark.anyio
 async def test_activity_monitor_no_timeout() -> None:
     """Test ActivityMonitor with timeout disabled."""
     # Use a real stream pair to provide .receive() and other methods
@@ -437,6 +488,59 @@ async def test_bridge_streams_drain_stderr() -> None:
             await bridge_streams(mock_sse_read, mock_sse_write, mock_proc)
         except (anyio.get_cancelled_exc_class(), ExceptionGroup):
             pass
+
+@pytest.mark.anyio
+async def test_bridge_streams_stdin_none() -> None:
+    """Test sse_to_proc logs error and breaks when proc.stdin is None (lines 86-87)."""
+    mock_sse_read = AsyncMock()
+    mock_sse_write = AsyncMock()
+    mock_proc = _make_mock_proc()
+    mock_proc.stdin = None
+
+    mock_msg = MagicMock()
+    mock_msg.model_dump_json.return_value = '{"jsonrpc": "2.0"}'
+
+    async def sse_gen() -> AsyncGenerator[Any, Any]:
+        yield mock_msg
+
+    mock_sse_read.__aiter__.side_effect = sse_gen
+
+    with anyio.fail_after(5):
+        await bridge_streams(mock_sse_read, mock_sse_write, mock_proc)
+
+
+@pytest.mark.anyio
+async def test_bridge_streams_stdout_none() -> None:
+    """Test proc_to_sse cancels task group when proc.stdout is None (lines 97-99)."""
+    mock_sse_read = AsyncMock()
+    mock_sse_write = AsyncMock()
+    mock_proc = _make_mock_proc()
+    mock_proc.stdout = None
+
+    mock_iterator = AsyncMock()
+    mock_iterator.__anext__.side_effect = StopAsyncIteration
+    mock_sse_read.__aiter__.return_value = mock_iterator
+
+    with anyio.fail_after(5):
+        await bridge_streams(mock_sse_read, mock_sse_write, mock_proc)
+
+
+@pytest.mark.anyio
+async def test_bridge_streams_stderr_none() -> None:
+    """Test drain_stderr returns immediately when proc.stderr is None (lines 126-127)."""
+    mock_sse_read = AsyncMock()
+    mock_sse_write = AsyncMock()
+    mock_proc = _make_mock_proc()
+    mock_proc.stderr = None
+
+    mock_iterator = AsyncMock()
+    mock_iterator.__anext__.side_effect = StopAsyncIteration
+    mock_sse_read.__aiter__.return_value = mock_iterator
+
+    with patch("mcp_stdio_bridge.mode.proxy.read_lines", return_value=AsyncMock()):
+        with anyio.fail_after(5):
+            await bridge_streams(mock_sse_read, mock_sse_write, mock_proc)
+
 
 @pytest.mark.anyio
 async def test_bridge_streams_idle_timeout_disabled() -> None:
