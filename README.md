@@ -28,7 +28,7 @@ A generic, professional-grade gateway that bridges Model Context Protocol (MCP) 
 Install the package using pip:
 
 ```bash
-pip install .
+pip install mcp-stdio-bridge
 ```
 
 ## Documentation
