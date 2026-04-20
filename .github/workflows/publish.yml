@@ -6,27 +6,38 @@ on:
       - 'v*' # Trigger on any tag starting with v (e.g., v1.5.0-beta)
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Essential for creating the release and uploading files
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.11' # Use modern Python for the build process
+          python-version: '3.11'
 
-      - name: Install Build Tools
+      - name: Build distributions
         run: |
-          python -m pip install --upgrade pip
-          pip install build
+          python -m pip install --upgrade pip build
+          python -m build
 
-      - name: Build Source Distribution and Wheel
-        # This generates files in the dist/ directory
-        run: python -m build
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -36,6 +47,22 @@ jobs:
             dist/*.whl
           body_path: CHANGELOG.md
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }} # Auto-marks v1.5.0-beta as pre-release
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-to-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # Required for Trusted Publishing (OIDC)
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
