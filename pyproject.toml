@@ -4,12 +4,11 @@
 name = "mcp-stdio-bridge"
 version = "1.0.2"
 description = "A generic MCP SSE <-> Stdio bridge with advanced security and SSL/TLS support."
-license = { text = "Unlicense" }
+license = "Unlicense"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: The Unlicense (Unlicense)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
