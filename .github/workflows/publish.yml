@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -15,6 +17,17 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+
+      - name: Patch README links for PyPI
+        run: |
+          # Replaces relative links like (docs/file.md) with (https://github.com)
+          # This only affects the ephemeral file in the runner, not your repo.
+          sed -i "s|(\(docs/[^)]*\))|(https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/\1)|g" README.md
+
+      - name: Check patched links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          file-path: ./README.md
 
       - name: Build distributions
         run: |
@@ -33,6 +46,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
       - name: Download distributions
         uses: actions/download-artifact@v4
         with:
