@@ -136,6 +136,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--watch-config", action="store_true",
                         help="Enable dynamic config reloading")
 
+    # Utilities
+    parser.add_argument("--generate-api-key", action="store_true",
+                        help="Generate a random API key and print it, then exit")
+
     return parser.parse_args()
 
 _last_args = None

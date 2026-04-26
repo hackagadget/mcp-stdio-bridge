@@ -8,6 +8,52 @@ from unittest.mock import patch, AsyncMock
 from mcp_stdio_bridge.main import main as cli_main, config_watcher
 from mcp_stdio_bridge.config import settings
 
+def test_generate_api_key_exits_zero(capsys: pytest.CaptureFixture) -> None:
+    """--generate-api-key prints a key and exits 0 without loading any config."""
+    with patch("sys.argv", ["mcp-stdio-bridge", "--generate-api-key"]):
+        with patch("mcp_stdio_bridge.main.finalize_settings") as mock_finalize:
+            with pytest.raises(SystemExit) as exc:
+                cli_main()
+            assert exc.value.code == 0
+            mock_finalize.assert_not_called()
+
+    key = capsys.readouterr().out.strip()
+    assert len(key) > 0
+
+
+def test_generate_api_key_is_url_safe_base64(capsys: pytest.CaptureFixture) -> None:
+    """Key produced by --generate-api-key is URL-safe Base64 (no +, /, or = padding)."""
+    import re
+    with patch("sys.argv", ["mcp-stdio-bridge", "--generate-api-key"]):
+        with pytest.raises(SystemExit):
+            cli_main()
+
+    key = capsys.readouterr().out.strip()
+    assert re.fullmatch(r"[A-Za-z0-9_\-]+", key), f"Key not URL-safe Base64: {key!r}"
+
+
+def test_generate_api_key_sufficient_length(capsys: pytest.CaptureFixture) -> None:
+    """Key is at least 32 characters long (256-bit entropy encoded)."""
+    with patch("sys.argv", ["mcp-stdio-bridge", "--generate-api-key"]):
+        with pytest.raises(SystemExit):
+            cli_main()
+
+    key = capsys.readouterr().out.strip()
+    assert len(key) >= 32
+
+
+def test_generate_api_key_is_random(capsys: pytest.CaptureFixture) -> None:
+    """Two consecutive calls produce different keys."""
+    keys = []
+    for _ in range(2):
+        with patch("sys.argv", ["mcp-stdio-bridge", "--generate-api-key"]):
+            with pytest.raises(SystemExit):
+                cli_main()
+        keys.append(capsys.readouterr().out.strip())
+
+    assert keys[0] != keys[1]
+
+
 def test_main_config_load_error() -> None:
     """Test that main() handles YAML load errors in config."""
     with patch("sys.argv", ["mcp-stdio-bridge", "--config", "nonexistent.yaml"]):

@@ -12,6 +12,7 @@ import sys
 import argparse
 import emoji
 import os
+import secrets
 import signal
 from typing import Any
 from .config import parse_args, finalize_settings, settings, reload_settings, get_config_files
@@ -106,6 +107,10 @@ def main() -> None:
     except argparse.ArgumentError as e:
         print(f"CLI Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.generate_api_key:
+        print(secrets.token_urlsafe(32))
+        sys.exit(0)
 
     finalize_settings(args)
     _setup_signal_handlers()
