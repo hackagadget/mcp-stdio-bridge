@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API Key Generator**: Added `--generate-api-key` CLI flag that prints a cryptographically
   random URL-safe Base64 key (256-bit entropy) and exits, making it easy to generate a value
   for the `api_key` config field without starting the bridge.
+- **Config Validator**: Added `--check-config` flag (modelled on `nginx -t`) that validates
+  configuration without starting the bridge. Each config file is parsed and validated against
+  the bundled JSON schema; the merged result is then checked for semantic errors (missing
+  `command`, incomplete SSL pair, etc.) and warnings (SSE-only options in stdio mode,
+  conflicting env lists). Exits 0 on success, 1 on any error.
+- **Warnings as Errors**: Added `--warnings-as-errors` flag (used with `--check-config`) that
+  promotes all warnings to errors, enabling strict validation in CI or systemd/rc.d
+  `ExecStartPre=` checks.
 
 ### Fixed
 

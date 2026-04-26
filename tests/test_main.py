@@ -78,17 +78,53 @@ def test_main_keyboard_interrupt() -> None:
         with patch("anyio.run", side_effect=KeyboardInterrupt()):
             cli_main() # Should not raise
 
-def test_main_base_exception_group_keyboard_interrupt() -> None:
-    """BaseExceptionGroup containing only KeyboardInterrupt is swallowed silently."""
-    eg = BaseExceptionGroup("shutdown", [KeyboardInterrupt()])
+def test_main_exception_group_keyboard_interrupt() -> None:
+    """An exception with .exceptions=[KeyboardInterrupt] is swallowed silently."""
+
+    class _FakeGroup(Exception):
+        def __init__(self) -> None:
+            super().__init__("shutdown")
+            self.exceptions = [KeyboardInterrupt()]
+
+    with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
+        with patch("anyio.run", side_effect=_FakeGroup()):
+            cli_main()  # must not raise
+
+
+def test_main_exception_group_real_error() -> None:
+    """An exception with mixed .exceptions (including non-KI) exits with code 1."""
+
+    class _FakeGroup(Exception):
+        def __init__(self) -> None:
+            super().__init__("mixed")
+            self.exceptions = [KeyboardInterrupt(), RuntimeError("boom")]
+
+    with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
+        with patch("anyio.run", side_effect=_FakeGroup()):
+            with pytest.raises(SystemExit) as exc:
+                cli_main()
+            assert exc.value.code == 1
+
+
+@pytest.mark.skipif(
+    __import__("sys").version_info < (3, 11),
+    reason="BaseExceptionGroup is a builtin only on Python 3.11+"
+)
+def test_main_base_exception_group_ki_only() -> None:
+    """Python 3.11+ BaseExceptionGroup(KI only) is caught by the BaseException handler."""
+    eg = BaseExceptionGroup("shutdown", [KeyboardInterrupt()])  # type: ignore[name-defined]
     with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
         with patch("anyio.run", side_effect=eg):
             cli_main()  # must not raise
 
 
-def test_main_base_exception_group_real_error() -> None:
-    """BaseExceptionGroup with a non-KeyboardInterrupt sub-exception exits with code 1."""
-    eg = BaseExceptionGroup("mixed", [KeyboardInterrupt(), RuntimeError("boom")])
+@pytest.mark.skipif(
+    __import__("sys").version_info < (3, 11),
+    reason="BaseExceptionGroup is a builtin only on Python 3.11+"
+)
+def test_main_base_exception_group_mixed_error() -> None:
+    """Python 3.11+ BaseExceptionGroup with non-KI sub-exception exits 1."""
+    eg = BaseExceptionGroup("mixed", [KeyboardInterrupt(), RuntimeError("boom")])  # type: ignore[name-defined]
     with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
         with patch("anyio.run", side_effect=eg):
             with pytest.raises(SystemExit) as exc:

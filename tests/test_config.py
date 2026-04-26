@@ -8,13 +8,11 @@ from unittest.mock import patch
 from mcp_stdio_bridge.config import settings, finalize_settings, parse_args
 
 def test_config_schema_validation() -> None:
-    """Validate config.example.yaml against schema.json."""
-    root_dir = Path(__file__).parent.parent
-    schema_path = root_dir / "schema.json"
-    example_config_path = root_dir / "config.example.yaml"
+    """Validate config.example.yaml against the bundled schema."""
+    from mcp_stdio_bridge.config import _load_schema
+    example_config_path = Path(__file__).parent.parent / "config.example.yaml"
 
-    with open(schema_path, "r") as f:
-        schema = json.load(f)
+    schema = _load_schema()
 
     with open(example_config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -230,3 +228,261 @@ def test_get_config_files_includes_explicit_config(tmp_path: Path,
     with patch("sys.argv", ["mcp-stdio-bridge", "--config", explicit]):
         finalize_settings(parse_args())
     assert explicit in get_config_files()
+
+
+# ---------------------------------------------------------------------------
+# validate_settings
+# ---------------------------------------------------------------------------
+
+def test_validate_settings_proxy_missing_command() -> None:
+    """proxy mode without command is an error."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "mode": "proxy", "command": None}
+    errors, warnings = validate_settings(final)
+    assert any("proxy" in e and "command" in e for e in errors)
+    assert warnings == []
+
+
+def test_validate_settings_wrapper_missing_commands() -> None:
+    """command-wrapper mode without wrapped_commands is an error."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "mode": "command-wrapper", "wrapped_commands": []}
+    errors, warnings = validate_settings(final)
+    assert any("command-wrapper" in e for e in errors)
+    assert warnings == []
+
+
+def test_validate_settings_ssl_keyfile_without_certfile() -> None:
+    """ssl_keyfile set without ssl_certfile is an error."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "command": "echo", "ssl_keyfile": "key.pem", "ssl_certfile": None}
+    errors, _ = validate_settings(final)
+    assert any("ssl_keyfile" in e and "ssl_certfile" in e for e in errors)
+
+
+def test_validate_settings_ssl_certfile_without_keyfile() -> None:
+    """ssl_certfile set without ssl_keyfile is an error."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "command": "echo", "ssl_keyfile": None, "ssl_certfile": "cert.pem"}
+    errors, _ = validate_settings(final)
+    assert any("ssl_certfile" in e and "ssl_keyfile" in e for e in errors)
+
+
+def test_validate_settings_stdio_sse_key_warning() -> None:
+    """SSE-only key set while transport is stdio produces a warning."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "command": "echo", "transport": "stdio", "api_key": "secret"}
+    errors, warnings = validate_settings(final)
+    assert errors == []
+    assert any("api_key" in w for w in warnings)
+
+
+def test_validate_settings_env_list_conflict_warning() -> None:
+    """Both env_allowlist and a custom env_denylist set produces a warning."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "command": "echo",
+             "env_allowlist": ["PATH"], "env_denylist": ["SECRET"]}
+    errors, warnings = validate_settings(final)
+    assert errors == []
+    assert any("env_allowlist" in w for w in warnings)
+
+
+def test_validate_settings_valid_proxy() -> None:
+    """A properly configured proxy has no errors or warnings."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "command": "npx mcp-server"}
+    errors, warnings = validate_settings(final)
+    assert errors == []
+    assert warnings == []
+
+
+def test_validate_settings_valid_wrapper() -> None:
+    """A properly configured command-wrapper has no errors or warnings."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+    final = {**DEFAULT_SETTINGS, "mode": "command-wrapper",
+             "wrapped_commands": [{"name": "t", "description": "d", "command": "echo"}]}
+    errors, warnings = validate_settings(final)
+    assert errors == []
+    assert warnings == []
+
+
+# ---------------------------------------------------------------------------
+# check_config
+# ---------------------------------------------------------------------------
+
+def _make_args(**kwargs: object) -> object:
+    """Build a minimal argparse.Namespace for check_config tests."""
+    import argparse
+    defaults = dict(config=None, check_config=True, warnings_as_errors=False,
+                    generate_api_key=False, mode=None, transport=None, host=None,
+                    port=None, command=None, api_key=None, max_connections=None,
+                    max_message_size=None, verbose=False, logging_level=None,
+                    logging_config=None, ssl_keyfile=None, ssl_certfile=None,
+                    ssl_keyfile_password=None, ssl_ca_certs=None, ssl_crlfile=None,
+                    ssl_client_cert_required=False, ssl_protocol=None, ssl_ciphers=None,
+                    hsts=None, security_headers=None, cors_origins=None,
+                    idle_timeout=None, rate_limit_requests=None, rate_limit_window=None,
+                    env_allowlist=None, env_denylist=None, watch_config=False)
+    defaults.update(kwargs)
+    return argparse.Namespace(**defaults)
+
+
+def test_check_config_ok_no_files(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """No config files + command via CLI exits 0 and prints 'configuration ok'."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    args = _make_args(command="echo")
+    assert check_config(args, False) == 0  # type: ignore[arg-type]
+    assert "configuration ok" in capsys.readouterr().err
+
+
+def test_check_config_ok_with_file(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """Valid config file exits 0 and includes the file path in the output."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.dump({"command": "echo"}))
+    args = _make_args()
+    assert check_config(args, False) == 0  # type: ignore[arg-type]
+    out = capsys.readouterr().err
+    assert "configuration ok" in out
+    assert str(cfg) in out
+
+
+def test_check_config_yaml_parse_error(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """A YAML parse error exits 1 and reports the file."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    bad = tmp_path / "config.yaml"
+    bad.write_text("key: [unclosed")
+    args = _make_args()
+    assert check_config(args, False) == 1  # type: ignore[arg-type]
+    err = capsys.readouterr().err
+    assert "[error]" in err
+    assert "configuration has errors" in err
+
+
+def test_check_config_schema_error(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """An unknown key in the config file exits 1 with a schema error."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    bad = tmp_path / "config.yaml"
+    bad.write_text(yaml.dump({"command": "echo", "unknown_key_xyz": True}))
+    args = _make_args()
+    assert check_config(args, False) == 1  # type: ignore[arg-type]
+    err = capsys.readouterr().err
+    assert "[error]" in err
+    assert "configuration has errors" in err
+
+
+def test_check_config_semantic_error(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """proxy mode with no command is a semantic error that exits 1."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    args = _make_args()  # no command → proxy with no command
+    assert check_config(args, False) == 1  # type: ignore[arg-type]
+    err = capsys.readouterr().err
+    assert "[error]" in err
+
+
+def test_check_config_warning_exits_zero(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """A warning alone exits 0 and prints [warn]."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    # stdio transport + api_key set → warning
+    args = _make_args(command="echo", transport="stdio", api_key="secret")
+    assert check_config(args, False) == 0  # type: ignore[arg-type]
+    err = capsys.readouterr().err
+    assert "[warn]" in err
+    assert "configuration ok" in err
+
+
+def test_check_config_warnings_as_errors(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """With warnings_as_errors=True a warning promotes to [error] and exits 1."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    args = _make_args(command="echo", transport="stdio", api_key="secret")
+    assert check_config(args, True) == 1  # type: ignore[arg-type]
+    err = capsys.readouterr().err
+    assert "[error]" in err
+    assert "configuration has errors" in err
+
+
+def test_check_config_explicit_config_path(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """--config pointing to a valid file is loaded and reported."""
+    from mcp_stdio_bridge.config import check_config
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    explicit = tmp_path / "custom.yaml"
+    explicit.write_text(yaml.dump({"command": "echo"}))
+    args = _make_args(config=str(explicit))
+    assert check_config(args, False) == 0  # type: ignore[arg-type]
+    assert str(explicit) in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# CLI dispatch for --check-config and --warnings-as-errors
+# ---------------------------------------------------------------------------
+
+def test_main_check_config_exits_zero(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """--check-config with a valid config exits 0 before starting the bridge."""
+    from mcp_stdio_bridge.main import main as cli_main
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["mcp-stdio-bridge", "--check-config", "--command", "echo"]):
+        with patch("anyio.run") as mock_run:
+            with pytest.raises(SystemExit) as exc:
+                cli_main()
+            assert exc.value.code == 0
+            mock_run.assert_not_called()
+
+
+def test_main_check_config_exits_one_on_error(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--check-config with a missing command exits 1."""
+    from mcp_stdio_bridge.main import main as cli_main
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["mcp-stdio-bridge", "--check-config"]):
+        with pytest.raises(SystemExit) as exc:
+            cli_main()
+        assert exc.value.code == 1
+
+
+def test_main_warnings_as_errors_flag(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--warnings-as-errors with a warning condition exits 1."""
+    from mcp_stdio_bridge.main import main as cli_main
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["mcp-stdio-bridge", "--check-config", "--warnings-as-errors",
+                             "--command", "echo", "--transport", "stdio",
+                             "--api-key", "secret"]):
+        with pytest.raises(SystemExit) as exc:
+            cli_main()
+        assert exc.value.code == 1

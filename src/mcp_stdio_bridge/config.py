@@ -7,12 +7,15 @@ Handles loading, merging, and validating application settings from
 CLI arguments, YAML files, and environment variables. Implements
 a strict hierarchy where CLI > config.yaml > ~/.mcp-stdio-bridge.yaml.
 """
+import json
 import os
 import sys
 import yaml
 import argparse
+import jsonschema
 from typing import Any, Dict
 from pathlib import Path
+from importlib.resources import files as _resource_files
 
 # Application defaults
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -139,6 +142,10 @@ def parse_args() -> argparse.Namespace:
     # Utilities
     parser.add_argument("--generate-api-key", action="store_true",
                         help="Generate a random API key and print it, then exit")
+    parser.add_argument("--check-config", action="store_true",
+                        help="Validate configuration and exit")
+    parser.add_argument("--warnings-as-errors", action="store_true",
+                        help="Treat configuration warnings as errors (use with --check-config)")
 
     return parser.parse_args()
 
@@ -251,3 +258,135 @@ def prepare_env() -> Dict[str, str]:
             del env[key]
 
     return env
+
+
+def _load_schema() -> Dict[str, Any]:
+    """Load the bundled JSON schema from package resources."""
+    text = _resource_files("mcp_stdio_bridge").joinpath("schema.json").read_text(encoding="utf-8")
+    return json.loads(text)  # type: ignore[no-any-return]
+
+
+def validate_settings(final: Dict[str, Any]) -> tuple[list[str], list[str]]:
+    """
+    Run semantic validation on a merged settings dict.
+
+    Returns (errors, warnings). Errors mean the bridge cannot start;
+    warnings indicate likely misconfigurations that will be silently ignored
+    at runtime.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Errors: bridge cannot start without these
+    if final.get("mode") == "proxy" and not final.get("command"):
+        errors.append("proxy mode requires 'command' to be set")
+    if final.get("mode") == "command-wrapper" and not final.get("wrapped_commands"):
+        errors.append("command-wrapper mode requires at least one entry in 'wrapped_commands'")
+
+    # SSL must be specified as a pair
+    has_keyfile = bool(final.get("ssl_keyfile"))
+    has_certfile = bool(final.get("ssl_certfile"))
+    if has_keyfile and not has_certfile:
+        errors.append("'ssl_keyfile' is set but 'ssl_certfile' is missing")
+    if has_certfile and not has_keyfile:
+        errors.append("'ssl_certfile' is set but 'ssl_keyfile' is missing")
+
+    # Warnings: settings that exist but will be silently ignored
+    if final.get("transport") == "stdio":
+        sse_only_keys = [
+            "host", "port", "cors_origins", "api_key", "ssl_keyfile",
+            "ssl_certfile", "ssl_ca_certs", "hsts", "security_headers",
+        ]
+        for key in sse_only_keys:
+            if final.get(key) != DEFAULT_SETTINGS.get(key):
+                warnings.append(f"'{key}' is set but ignored in stdio transport mode")
+
+    if (
+        final.get("env_allowlist") is not None
+        and final.get("env_denylist") != DEFAULT_SETTINGS["env_denylist"]
+    ):
+        warnings.append(
+            "both 'env_allowlist' and 'env_denylist' are set; env_allowlist takes precedence"
+        )
+
+    return errors, warnings
+
+
+# Keys that are CLI-only (not part of the runtime settings dict)
+_CLI_ONLY_KEYS = {"config", "check_config", "warnings_as_errors", "generate_api_key"}
+
+
+def check_config(args: argparse.Namespace, warnings_as_errors: bool) -> int:
+    """
+    Validate configuration without starting the bridge, in the style of nginx -t.
+
+    Loads and merges all config sources, validates each file against the JSON
+    schema, then runs semantic checks on the merged result. Prints diagnostics
+    to stderr and returns 0 (ok) or 1 (errors found).
+    """
+    prog = "mcp-stdio-bridge"
+    has_error = False
+
+    # Load schema; strip oneOf so partial files (without command/wrapped_commands)
+    # are not rejected — semantic completeness is checked separately below.
+    schema = _load_schema()
+    file_schema = {k: v for k, v in schema.items() if k != "oneOf"}
+
+    final = DEFAULT_SETTINGS.copy()
+    sources: list[str] = []
+
+    config_paths: list[str] = [
+        str(Path.home() / ".mcp-stdio-bridge.yaml"),
+        str(Path.cwd() / "config.yaml"),
+    ]
+    if args.config:
+        config_paths.append(args.config)
+
+    for path in config_paths:
+        if not os.path.exists(path):
+            continue
+        sources.append(path)
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw: Dict[str, Any] = yaml.safe_load(f) or {}
+        except Exception as exc:
+            print(f"{prog}: [error] {path}: {exc}", file=sys.stderr)
+            has_error = True
+            continue
+
+        try:
+            jsonschema.validate(raw, file_schema)
+        except jsonschema.ValidationError as exc:
+            print(f"{prog}: [error] {path}: {exc.message}", file=sys.stderr)
+            has_error = True
+            continue
+
+        final.update(raw)
+
+    final.update(get_env_overrides())
+    cli_overrides = {
+        k: v for k, v in vars(args).items()
+        if v is not None and k not in _CLI_ONLY_KEYS
+    }
+    final.update(cli_overrides)
+
+    errors, warnings = validate_settings(final)
+
+    for msg in errors:
+        print(f"{prog}: [error] {msg}", file=sys.stderr)
+        has_error = True
+
+    for msg in warnings:
+        level = "error" if warnings_as_errors else "warn"
+        print(f"{prog}: [{level}] {msg}", file=sys.stderr)
+        if warnings_as_errors:
+            has_error = True
+
+    if has_error:
+        print(f"{prog}: configuration has errors", file=sys.stderr)
+        return 1
+
+    source_str = ", ".join(sources) if sources else "defaults only"
+    print(f"{prog}: configuration ok ({source_str})", file=sys.stderr)
+    return 0

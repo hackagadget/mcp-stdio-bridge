@@ -112,6 +112,10 @@ def main() -> None:
         print(secrets.token_urlsafe(32))
         sys.exit(0)
 
+    if args.check_config:
+        from .config import check_config
+        sys.exit(check_config(args, args.warnings_as_errors))
+
     finalize_settings(args)
     _setup_signal_handlers()
 
@@ -129,18 +133,23 @@ def main() -> None:
         anyio.run(start_app)
     except KeyboardInterrupt:
         pass
-    except BaseExceptionGroup as eg:
-        # anyio wraps exceptions from task groups in a BaseExceptionGroup.
-        # On Ctrl+C, uvicorn handles the first SIGINT itself then re-raises via
-        # signal.raise_signal(), which fires our handler inside the task group and
-        # produces a KeyboardInterrupt sub-exception here. Suppress it; re-raise
-        # anything else.
-        if not all(isinstance(e, KeyboardInterrupt) for e in eg.exceptions):
-            logger.critical(f"Application failed to start: {eg}")
-            sys.exit(1)
     except Exception as e:
-        logger.critical(f"Application failed to start: {e}")
-        sys.exit(1)
+        # On Python ≤3.10 the exceptiongroup backport makes BaseExceptionGroup a
+        # subclass of Exception; check via duck-typing so both versions are handled.
+        exceptions = getattr(e, "exceptions", None)
+        if exceptions is not None and all(isinstance(s, KeyboardInterrupt) for s in exceptions):
+            pass  # anyio-wrapped clean shutdown
+        else:
+            logger.critical(f"Application failed to start: {e}")
+            sys.exit(1)
+    except BaseException as e:
+        # On Python ≥3.11 BaseExceptionGroup subclasses BaseException directly.
+        exceptions = getattr(e, "exceptions", None)
+        if exceptions is not None and all(isinstance(s, KeyboardInterrupt) for s in exceptions):
+            pass  # anyio-wrapped clean shutdown
+        else:
+            logger.critical(f"Application failed to start: {e}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
