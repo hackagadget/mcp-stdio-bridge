@@ -21,3 +21,7 @@ verbose: false
 # ssl_ciphers: "ECDHE+AESGCM:ECDHE+CHACHA20"
 # hsts: true
 # security_headers: true
+
+# Optional: Rate limiting configuration
+# rate_limit_requests: 100
+# rate_limit_window: 60

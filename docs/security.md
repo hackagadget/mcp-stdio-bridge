@@ -17,6 +17,12 @@ The bridge supports built-in SSL/TLS termination with the following hardening fe
 -   **HSTS**: Optional HTTP Strict Transport Security.
 -   **Security Middleware**: Adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and a restrictive `Content-Security-Policy`.
 
+### Rate Limiting
+To protect against DoS attacks and resource exhaustion, the bridge implements global per-IP rate limiting:
+-   **Mechanism**: Uses a sliding-window algorithm to track request frequency.
+-   **Configuration**: Configurable via `rate_limit_requests` and `rate_limit_window`.
+-   **Trust Proxies**: Correctly identifies client IPs behind reverse proxies by respecting the `X-Forwarded-For` header.
+
 ## Execution Security (Command-Wrapper)
 
 ### Secure Jailing

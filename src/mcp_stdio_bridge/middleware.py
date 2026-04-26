@@ -3,14 +3,17 @@
 Middleware Module
 =================
 
-Custom Starlette middleware for enforcing API key authentication
-and injecting standard security headers into HTTP responses.
+Custom Starlette middleware for enforcing API key authentication,
+injecting standard security headers, and global per-IP rate limiting.
 """
 import secrets
+import time
+from collections import defaultdict
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.middleware.base import RequestResponseEndpoint
+from starlette.types import ASGIApp
 from .config import settings
 from .logging_utils import logger
 
@@ -38,6 +41,47 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 logger.warning(f"Unauthorized access attempt from {client_ip}")
                 return Response("Unauthorized", status_code=401)
         return await call_next(request)
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Per-IP sliding-window rate limiter.
+
+    Disabled when rate_limit_requests is 0 (the default). Uses
+    X-Forwarded-For when present so proxied clients are bucketed
+    by their real IP rather than the proxy's address.
+    """
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+        # Per-IP state: ip -> (window_start, request_count)
+        self._state: dict[str, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        limit = settings.get("rate_limit_requests", 0)
+        if not limit:
+            return await call_next(request)
+
+        window = settings.get("rate_limit_window", 60)
+        client_ip = request.headers.get(
+            "X-Forwarded-For",
+            request.client.host if request.client else "unknown"
+        )
+        # Only take the first address from a potentially comma-separated list.
+        client_ip = client_ip.split(",")[0].strip()
+
+        now = time.monotonic()
+        window_start, count = self._state[client_ip]
+
+        if now - window_start >= window:
+            # Window has expired — start a fresh one.
+            self._state[client_ip] = (now, 1)
+        elif count >= limit:
+            logger.warning(f"Rate limit exceeded for {client_ip}")
+            return Response("Too Many Requests", status_code=429)
+        else:
+            self._state[client_ip] = (window_start, count + 1)
+
+        return await call_next(request)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """

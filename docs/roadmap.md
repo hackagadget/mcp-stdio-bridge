@@ -18,7 +18,6 @@ This document outlines potential features and improvements for the **MCP Stdio B
 | **Monitoring & Metrics** | Prometheus-compatible `/metrics` endpoint for active sessions, error rates, and resource usage. | 8-12 |
 | **Audit Logging** | Dedicated secure log for tracking exact command executions, arguments, and associated API keys. | 4-6 |
 | **Tool Execution Caching** | Optional TTL-based caching for Command Wrapper results to reduce load for idempotent queries. | 6-10 |
-| **Global Rate Limiting** | Throttling mechanism (middleware-based) to protect against DoS or resource abuse. | 4-6 |
 
 ## Low Priority (User Experience & Extensibility)
 *Focus on advanced integration patterns and ease of use.*

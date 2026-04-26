@@ -41,6 +41,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "logging_config": None,
     "watch_config": False, # Watch for config file changes and reload
     "idle_timeout": 3600, # 1 hour default for proxy sessions
+    "rate_limit_requests": 0,  # 0 = disabled; requests allowed per window
+    "rate_limit_window": 60,   # window size in seconds
     "env_allowlist": None, # None means allow all (legacy) but usually restricted
     "env_denylist": [
         "MCP_API_KEY", "SSL_KEYFILE_PASSWORD", "AWS_ACCESS_KEY_ID",
@@ -118,6 +120,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cors-origins", nargs="+", help="CORS origins")
     parser.add_argument("--idle-timeout", type=int,
                         help="Idle timeout for proxy sessions (seconds)")
+    parser.add_argument("--rate-limit-requests", type=int,
+                        help="Max requests per client per window (0 = disabled)")
+    parser.add_argument("--rate-limit-window", type=int,
+                        help="Rate limit window size in seconds (default: 60)")
 
     # Environment Flags
     parser.add_argument("--env-allowlist", nargs="+", help="Allowlist of environment variables")

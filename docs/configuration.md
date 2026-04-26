@@ -69,6 +69,8 @@ Directly exposes one or more standard CLI tools as MCP tools. The bridge hosts a
 | `ssl_ciphers` | `string` | `null` | List of SSL ciphers to use. |
 | `hsts` | `boolean` | `false` | If `true`, enables HTTP Strict Transport Security (HSTS). |
 | `security_headers` | `boolean` | `true` | If `true`, adds standard security headers. |
+| `rate_limit_requests` | `integer` | `0` | Requests allowed per window per IP. Set to 0 to disable. |
+| `rate_limit_window` | `integer` | `60` | Rate limit window size in seconds. |
 | `idle_timeout` | `integer` | `3600` | Session timeout in seconds for idle connections. Set to 0 to disable. |
 | `env_allowlist` | `list` | `null` | If set, only these environment variables are passed to subprocesses. |
 | `env_denylist` | `list` | `[...]` | List of environment variables to explicitly remove from subprocesses (e.g., `MCP_API_KEY`). |

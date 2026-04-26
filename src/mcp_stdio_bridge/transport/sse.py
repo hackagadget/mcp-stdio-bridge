@@ -25,7 +25,7 @@ from mcp.server.sse import SseServerTransport
 
 from ..config import settings
 from ..logging_utils import logger
-from ..middleware import APIKeyMiddleware, SecurityHeadersMiddleware
+from ..middleware import APIKeyMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 from ..mode import bridge_streams, create_wrapper_server
 from ..activity_monitor import ActivityMonitor
 
@@ -179,6 +179,7 @@ def create_app() -> Starlette:
             Middleware(CORSMiddleware, allow_origins=settings["cors_origins"],
                        allow_methods=["*"], allow_headers=["*"]),
             Middleware(APIKeyMiddleware),
+            Middleware(RateLimitMiddleware),
             Middleware(SecurityHeadersMiddleware)
         ]
     )

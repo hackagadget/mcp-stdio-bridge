@@ -124,6 +124,8 @@
     "ssl_ciphers": { "type": "string" },
     "hsts": { "type": "boolean", "default": false },
     "security_headers": { "type": "boolean", "default": true },
+    "rate_limit_requests": { "type": "integer", "default": 0, "description": "Requests allowed per window per IP. Set to 0 to disable." },
+    "rate_limit_window": { "type": "integer", "default": 60, "description": "Rate limit window size in seconds." },
     "logging_level": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "INFO" },
     "logging_config": { "type": ["string", "null"] },
     "idle_timeout": { "type": "integer", "default": 3600 },
