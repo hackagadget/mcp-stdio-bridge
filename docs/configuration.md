@@ -89,7 +89,7 @@ Each entry in `wrapped_commands` is an object:
 | `env` | `object` | Dictionary of environment variables to set specifically for this tool. |
 | `timeout` | `integer` | Execution timeout in seconds (default: 30). |
 
-**Note**: You can use either an Allowlist (`allowed_args`, `allowed_patterns`) or a Denylist (`forbidden_args`, `forbidden_patterns`), but not both for the same command.
+**Note**: `forbidden_args` and `allowed_args` / `allowed_patterns` are mutually exclusive — a tool using both will be skipped at startup. However, `forbidden_patterns` can be freely combined with either approach and is always evaluated last as a final veto, making it the recommended way to block dangerous flags (e.g. `--exec`, `--require`) regardless of which security model the tool uses.
 
 ## Example `config.yaml`
 

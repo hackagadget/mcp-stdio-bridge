@@ -23,6 +23,7 @@ The bridge supports built-in SSL/TLS termination with the following hardening fe
 When wrapping CLI tools, the bridge implements a "Security Jail":
 -   **Allowlists (Opt-in)**: Strictly permit only specific subcommand prefixes or regex patterns.
 -   **Denylists (Opt-out)**: Explicitly block dangerous subcommand prefixes (e.g., `rm`, `db query`).
+-   **`forbidden_patterns` (Final Veto)**: Regex patterns in `forbidden_patterns` are always evaluated last, after allowlist and denylist checks. This makes them composable with either security model and is the recommended way to universally block dangerous flags such as `--exec` or `--require` that could execute arbitrary code regardless of the permitted subcommand.
 -   **Shell-Injection Protection**: Subcommands are parsed using `shlex` and passed as a list to `anyio.run_process`, completely bypassing the shell.
 
 ### Path Sanitization

@@ -167,14 +167,65 @@ async def test_wrapper_mutual_exclusivity() -> None:
         server = create_wrapper_server()
         # Trigger validation via handler
         await server.request_handlers[types.ListToolsRequest](types.ListToolsRequest())
-        mock_error.assert_called_with("Command 'invalid_tool' has both allowed and "
-                                      "forbidden security rules. Skipping.")
+        mock_error.assert_called_with("Command 'invalid_tool' has both allowed_args and "
+                                      "forbidden_args security rules. Skipping.")
         # Ensure it's NOT in the tool list by checking the registered handler
         handler = server.request_handlers[types.ListToolsRequest]
         tools_result = await handler(types.ListToolsRequest())
         # tools_result.root is a ListToolsResult object containing a 'tools' list
         tool_names = [t.name for t in tools_result.root.tools]
         assert "invalid_tool" not in tool_names
+
+@pytest.mark.anyio
+async def test_wrapper_allowed_args_with_forbidden_patterns() -> None:
+    """Test that forbidden_patterns veto commands even when allowed_args passes,
+    and that combining the two is valid (tool is not skipped)."""
+    settings["wrapped_commands"] = [{
+        "name": "combo_tool",
+        "description": "desc",
+        "command": "wp",
+        "allowed_args": ["plugin list", "plugin status"],
+        "forbidden_patterns": ["--exec", "--require"]
+    }]
+
+    server = create_wrapper_server()
+
+    # Tool must be registered — allowed_args + forbidden_patterns is now a valid combination.
+    tools_result = await server.request_handlers[types.ListToolsRequest](types.ListToolsRequest())
+    assert "combo_tool" in [t.name for t in tools_result.root.tools]
+
+    handler = server.request_handlers[types.CallToolRequest]
+
+    # Rejected by allowlist (prefix not permitted).
+    req = types.CallToolRequest(
+        params=types.CallToolRequestParams(name="combo_tool",
+                                           arguments={"subcommand": "plugin delete my-plugin"})
+    )
+    result = await handler(req)
+    assert "not in the allowed list" in result.root.content[0].text
+
+    # Passes allowlist but vetoed by forbidden_patterns as a final check.
+    req = types.CallToolRequest(
+        params=types.CallToolRequestParams(name="combo_tool",
+                                           arguments={"subcommand": "plugin list --exec=phpinfo()"})
+    )
+    result = await handler(req)
+    assert "restricted security pattern" in result.root.content[0].text
+
+    # Passes both checks — executes normally.
+    with patch("mcp_stdio_bridge.mode.wrapper.anyio.run_process",
+               new_callable=AsyncMock) as mock_run:
+        mock_result = MagicMock()
+        mock_result.stdout = b"plugin output"
+        mock_run.return_value = mock_result
+
+        req = types.CallToolRequest(
+            params=types.CallToolRequestParams(name="combo_tool",
+                                               arguments={"subcommand": "plugin list --format=json"})
+        )
+        result = await handler(req)
+        assert result.root.content[0].text == "plugin output"
+    await anyio.lowlevel.checkpoint()
 
 @pytest.mark.anyio
 async def test_wrapper_execution_timeout() -> None:

@@ -39,8 +39,8 @@ def create_wrapper_server() -> Server:
             allowed_args = cmd_config.get("allowed_args", [])
             allowed_patterns = cmd_config.get("allowed_patterns", [])
 
-            if (allowed_args or allowed_patterns) and (forbidden_args or forbidden_patterns):
-                logger.error(f"Command '{name}' has both allowed and forbidden security rules. "
+            if (allowed_args or allowed_patterns) and forbidden_args:
+                logger.error(f"Command '{name}' has both allowed_args and forbidden_args security rules. "
                              f"Skipping.")
                 continue
             tools_map[name] = cmd_config
@@ -109,7 +109,7 @@ def create_wrapper_server() -> Server:
                      return [types.TextContent(type="text", text="Error: Path traversal or "
                                                "unauthorized absolute path detected.")]
 
-        # 3. Safety Filter (Denylist): Block forbidden prefixes or patterns.
+        # 3. Safety Filter (Denylist): Block forbidden prefixes.
         if forbidden_args:
             for restricted in forbidden_args:
                 if cmd_string_lower.startswith(restricted.lower().strip()):
@@ -117,14 +117,6 @@ def create_wrapper_server() -> Server:
                                                  f"'{cmd_string}' (matched prefix '{restricted}')"))
                     return [types.TextContent(type="text", text=f"Error: The command prefix "
                                               f"'{restricted}' is restricted for security.")]
-
-        if forbidden_patterns:
-            for pattern in forbidden_patterns:
-                if re.search(pattern, cmd_string, re.IGNORECASE):
-                    logger.warning(emoji.emojize(f":warning: Blocked restricted command: "
-                                                 f"'{cmd_string}' (matched pattern '{pattern}')"))
-                    return [types.TextContent(type="text", text="Error: The subcommand matches "
-                                              "a restricted security pattern.")]
 
         # 4. Safety Filter (Allowlist): Only allow specific prefixes or patterns.
         if allowed_args or allowed_patterns:
@@ -149,7 +141,17 @@ def create_wrapper_server() -> Server:
                 return [types.TextContent(type="text", text="Error: The provided subcommand is "
                                           "not in the allowed list for this tool.")]
 
-        # 5. Execution: Assemble and run the command with capture.
+        # 5. Safety Filter (Patterns): Always applied last as a final veto, regardless of
+        #    whether the tool uses an allowlist or denylist approach.
+        if forbidden_patterns:
+            for pattern in forbidden_patterns:
+                if re.search(pattern, cmd_string, re.IGNORECASE):
+                    logger.warning(emoji.emojize(f":warning: Blocked restricted command: "
+                                                 f"'{cmd_string}' (matched pattern '{pattern}')"))
+                    return [types.TextContent(type="text", text="Error: The subcommand matches "
+                                              "a restricted security pattern.")]
+
+        # 6. Execution: Assemble and run the command with capture.
         full_command = [base_cmd] + args
         logger.info(f"Executing wrapped command: {' '.join(full_command)}")
 
