@@ -46,6 +46,14 @@ MCP Client
 
 `middleware.py` provides `APIKeyMiddleware` (timing-safe comparison), `SecurityHeadersMiddleware` (CSP, HSTS, X-Frame-Options), and `RateLimitMiddleware` (per-IP sliding window), all used only by the SSE transport.
 
+## Git commit messages
+
+Follow the [git recommended format](https://git-scm.com/docs/git-commit#_discussion):
+
+- **Subject line**: 50 characters or fewer, imperative mood ("Add feature" not "Added feature"), no trailing period.
+- **Blank line** separating subject from body.
+- **Body**: wrap at 72 characters; explain *what* and *why*, not *how*.
+
 ## Testing notes
 
 Always pass `--timeout=10` (via `pytest-timeout`) when running tests. SSE transport tests that pass auth and reach `handle_sse` will spawn a real subprocess and block indefinitely if the handler is not mocked — the timeout flag is the safety net for any such hang.
