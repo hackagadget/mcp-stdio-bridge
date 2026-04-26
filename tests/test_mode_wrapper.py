@@ -448,3 +448,238 @@ async def test_wrapper_system_error_actual() -> None:
         result = await handler(req)
         assert "System Error" in result.root.content[0].text
     await anyio.lowlevel.checkpoint()
+
+
+# ---------------------------------------------------------------------------
+# Config Groups — Unit tests for apply_groups helper
+# ---------------------------------------------------------------------------
+
+from mcp_stdio_bridge.mode.wrapper import apply_groups  # noqa: E402
+
+def test_apply_groups_no_apply_key() -> None:
+    """apply_groups returns the same object when no apply key is present."""
+    cmd: dict = {"name": "t", "command": "echo"}
+    assert apply_groups(cmd, {}) is cmd
+
+def test_apply_groups_empty_apply() -> None:
+    """apply_groups returns the same object when apply is an empty list."""
+    cmd: dict = {"name": "t", "command": "echo", "apply": []}
+    assert apply_groups(cmd, {}) is cmd
+
+def test_apply_groups_single_group_list_field() -> None:
+    """List field from a group is present in the effective config."""
+    groups = {"safety": {"forbidden_patterns": ["--exec", "--ssh"]}}
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["safety"]}
+    result = apply_groups(cmd, groups)
+    assert result["forbidden_patterns"] == ["--exec", "--ssh"]
+
+def test_apply_groups_list_union_with_per_command() -> None:
+    """Group list field and per-command list field are unioned."""
+    groups = {"safety": {"forbidden_patterns": ["--exec"]}}
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["safety"],
+                 "forbidden_patterns": ["--ssh"]}
+    result = apply_groups(cmd, groups)
+    assert "--exec" in result["forbidden_patterns"]
+    assert "--ssh" in result["forbidden_patterns"]
+
+def test_apply_groups_list_deduplication() -> None:
+    """Items duplicated across a group and per-command are deduplicated."""
+    groups = {"safety": {"forbidden_patterns": ["--exec"]}}
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["safety"],
+                 "forbidden_patterns": ["--exec"]}
+    result = apply_groups(cmd, groups)
+    assert result["forbidden_patterns"].count("--exec") == 1
+
+def test_apply_groups_multiple_groups_list_union() -> None:
+    """List fields from multiple applied groups are all unioned."""
+    groups = {
+        "a": {"forbidden_patterns": ["--exec"]},
+        "b": {"forbidden_patterns": ["--ssh"]},
+    }
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["a", "b"]}
+    result = apply_groups(cmd, groups)
+    assert "--exec" in result["forbidden_patterns"]
+    assert "--ssh" in result["forbidden_patterns"]
+
+def test_apply_groups_scalar_from_group() -> None:
+    """Group-defined scalar is used when command doesn't set it."""
+    groups = {"timing": {"timeout": 120}}
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["timing"]}
+    result = apply_groups(cmd, groups)
+    assert result["timeout"] == 120
+
+def test_apply_groups_per_command_scalar_wins() -> None:
+    """Per-command scalar wins over a group-defined scalar."""
+    groups = {"timing": {"timeout": 120}}
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["timing"], "timeout": 5}
+    result = apply_groups(cmd, groups)
+    assert result["timeout"] == 5
+
+def test_apply_groups_last_group_scalar_wins() -> None:
+    """When multiple groups set the same scalar, the last applied group wins."""
+    groups = {"fast": {"timeout": 10}, "slow": {"timeout": 120}}
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["fast", "slow"]}
+    result = apply_groups(cmd, groups)
+    assert result["timeout"] == 120
+
+def test_apply_groups_unknown_group_warns() -> None:
+    """An unknown group name logs a warning mentioning the group name."""
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["nonexistent"]}
+    with patch("mcp_stdio_bridge.mode.wrapper.logger.warning") as mock_warn:
+        apply_groups(cmd, {})
+        mock_warn.assert_called_once()
+        assert "nonexistent" in mock_warn.call_args[0][0]
+
+def test_apply_groups_unknown_group_preserves_per_command_values() -> None:
+    """Unknown group is skipped; per-command values are still present in result."""
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["nonexistent"], "timeout": 5}
+    with patch("mcp_stdio_bridge.mode.wrapper.logger.warning"):
+        result = apply_groups(cmd, {})
+    assert result["timeout"] == 5
+    assert result["command"] == "echo"
+
+def test_apply_groups_all_list_fields() -> None:
+    """All four list fields are unioned independently from a group."""
+    groups = {
+        "grp": {
+            "forbidden_patterns": ["fp"],
+            "forbidden_args": ["fa"],
+            "allowed_args": ["aa"],
+            "allowed_patterns": ["ap"],
+        }
+    }
+    cmd: dict = {"name": "t", "command": "echo", "apply": ["grp"]}
+    result = apply_groups(cmd, groups)
+    assert result["forbidden_patterns"] == ["fp"]
+    assert result["forbidden_args"] == ["fa"]
+    assert result["allowed_args"] == ["aa"]
+    assert result["allowed_patterns"] == ["ap"]
+
+
+# ---------------------------------------------------------------------------
+# Config Groups — Integration tests through the MCP handler
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_groups_apply_forbidden_patterns() -> None:
+    """Group forbidden_patterns block matching commands on tools using apply."""
+    settings["groups"] = {"safety": {"forbidden_patterns": ["--exec", "--ssh"]}}
+    settings["wrapped_commands"] = [{
+        "name": "wp",
+        "description": "WP CLI",
+        "command": "wp",
+        "apply": ["safety"],
+    }]
+    server = create_wrapper_server()
+    handler = server.request_handlers[types.CallToolRequest]
+
+    req = types.CallToolRequest(
+        params=types.CallToolRequestParams(
+            name="wp", arguments={"subcommand": "plugin list --exec=evil"})
+    )
+    result = await handler(req)
+    assert "restricted security pattern" in result.root.content[0].text
+
+@pytest.mark.anyio
+async def test_groups_list_union_with_per_command_patterns() -> None:
+    """Both group and per-command forbidden_patterns are enforced after union."""
+    settings["groups"] = {"safety": {"forbidden_patterns": ["--exec"]}}
+    settings["wrapped_commands"] = [{
+        "name": "tool",
+        "description": "desc",
+        "command": "echo",
+        "apply": ["safety"],
+        "forbidden_patterns": ["--ssh"],
+    }]
+    server = create_wrapper_server()
+    handler = server.request_handlers[types.CallToolRequest]
+
+    for blocked in ["--exec", "--ssh"]:
+        req = types.CallToolRequest(
+            params=types.CallToolRequestParams(
+                name="tool", arguments={"subcommand": f"run {blocked}"})
+        )
+        result = await handler(req)
+        assert "restricted security pattern" in result.root.content[0].text, \
+            f"Expected {blocked} to be blocked"
+
+@pytest.mark.anyio
+async def test_groups_apply_allowed_args() -> None:
+    """Group allowed_args restricts the commands accepted by the tool."""
+    settings["groups"] = {"read_only": {"allowed_args": ["list", "get"]}}
+    settings["wrapped_commands"] = [{
+        "name": "tool",
+        "description": "desc",
+        "command": "echo",
+        "apply": ["read_only"],
+    }]
+    server = create_wrapper_server()
+    handler = server.request_handlers[types.CallToolRequest]
+
+    req = types.CallToolRequest(
+        params=types.CallToolRequestParams(
+            name="tool", arguments={"subcommand": "delete all"})
+    )
+    result = await handler(req)
+    assert "not in the allowed list" in result.root.content[0].text
+
+@pytest.mark.anyio
+async def test_groups_mutual_exclusivity_after_expansion() -> None:
+    """A tool skipped when group adds allowed_patterns alongside per-command forbidden_args."""
+    settings["groups"] = {"allowlist": {"allowed_patterns": [".*"]}}
+    settings["wrapped_commands"] = [{
+        "name": "bad_tool",
+        "description": "desc",
+        "command": "echo",
+        "apply": ["allowlist"],
+        "forbidden_args": ["delete"],
+    }]
+    with patch("mcp_stdio_bridge.mode.wrapper.logger.error") as mock_error:
+        server = create_wrapper_server()
+        tools_result = await server.request_handlers[types.ListToolsRequest](
+            types.ListToolsRequest()
+        )
+        assert "bad_tool" not in [t.name for t in tools_result.root.tools]
+        mock_error.assert_called_once()
+
+@pytest.mark.anyio
+async def test_groups_unknown_group_tool_still_registered() -> None:
+    """A command with an unknown group name is still registered as a tool."""
+    settings["groups"] = {}
+    settings["wrapped_commands"] = [{
+        "name": "tool",
+        "description": "desc",
+        "command": "echo",
+        "apply": ["nonexistent"],
+    }]
+    with patch("mcp_stdio_bridge.mode.wrapper.logger.warning"):
+        server = create_wrapper_server()
+        tools_result = await server.request_handlers[types.ListToolsRequest](
+            types.ListToolsRequest()
+        )
+        assert "tool" in [t.name for t in tools_result.root.tools]
+
+@pytest.mark.anyio
+async def test_groups_no_apply_key_unaffected_by_other_groups() -> None:
+    """Commands without apply are not affected by groups defined at the top level."""
+    settings["groups"] = {"safety": {"forbidden_patterns": ["--exec"]}}
+    settings["wrapped_commands"] = [{
+        "name": "plain_tool",
+        "description": "desc",
+        "command": "echo",
+    }]
+    server = create_wrapper_server()
+    handler = server.request_handlers[types.CallToolRequest]
+
+    with patch("mcp_stdio_bridge.mode.wrapper.anyio.run_process",
+               new_callable=AsyncMock) as mock_run:
+        mock_result = MagicMock()
+        mock_result.stdout = b"ok"
+        mock_run.return_value = mock_result
+        req = types.CallToolRequest(
+            params=types.CallToolRequestParams(
+                name="plain_tool", arguments={"subcommand": "run --exec=evil"})
+        )
+        result = await handler(req)
+        assert result.root.content[0].text == "ok"
+    await anyio.lowlevel.checkpoint()

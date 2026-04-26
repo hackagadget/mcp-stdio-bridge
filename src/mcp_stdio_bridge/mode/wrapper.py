@@ -19,6 +19,55 @@ import mcp.types as types
 from ..config import settings, prepare_env
 from ..logging_utils import logger
 
+_LIST_FIELDS = frozenset({
+    "forbidden_patterns", "forbidden_args", "allowed_args", "allowed_patterns"
+})
+
+
+def apply_groups(cmd_config: Dict[str, Any], groups: Dict[str, Any]) -> Dict[str, Any]:
+    """Return effective command config with named groups merged in via the `apply` key.
+
+    List fields are unioned (groups first, in apply order, then per-command).
+    Scalar fields: per-command wins; last applied group wins among groups.
+    """
+    apply_names = cmd_config.get("apply", [])
+    if not apply_names:
+        return cmd_config
+
+    effective: Dict[str, Any] = {}
+
+    for group_name in apply_names:
+        if group_name not in groups:
+            logger.warning(
+                f"Config group '{group_name}' referenced by command "
+                f"'{cmd_config.get('name')}' does not exist. Skipping."
+            )
+            continue
+        for field, value in groups[group_name].items():
+            if field in _LIST_FIELDS:
+                existing = effective.get(field, [])
+                for item in value:
+                    if item not in existing:
+                        existing.append(item)
+                effective[field] = existing
+            else:
+                effective[field] = value
+
+    for field, value in cmd_config.items():
+        if field == "apply":
+            continue
+        if field in _LIST_FIELDS:
+            existing = effective.get(field, [])
+            for item in value:
+                if item not in existing:
+                    existing.append(item)
+            effective[field] = existing
+        else:
+            effective[field] = value
+
+    return effective
+
+
 def create_wrapper_server() -> Server:
     """
     Factory function to create an internal MCP server that wraps configured CLI tools.
@@ -32,11 +81,13 @@ def create_wrapper_server() -> Server:
     def get_validated_tools() -> Dict[str, Any]:
         """Dynamically generate and validate tools map from current settings."""
         tools_map = {}
+        groups = settings.get("groups", {})
         for cmd_config in settings.get("wrapped_commands", []):
-            name = cmd_config["name"]
-            forbidden_args = cmd_config.get("forbidden_args", [])
-            allowed_args = cmd_config.get("allowed_args", [])
-            allowed_patterns = cmd_config.get("allowed_patterns", [])
+            effective = apply_groups(cmd_config, groups)
+            name = effective["name"]
+            forbidden_args = effective.get("forbidden_args", [])
+            allowed_args = effective.get("allowed_args", [])
+            allowed_patterns = effective.get("allowed_patterns", [])
 
             if (allowed_args or allowed_patterns) and forbidden_args:
                 logger.error(
@@ -44,7 +95,7 @@ def create_wrapper_server() -> Server:
                     f"security rules. Skipping."
                 )
                 continue
-            tools_map[name] = cmd_config
+            tools_map[name] = effective
         return tools_map
 
     @server.list_tools()  # type: ignore[misc, no-untyped-call, untyped-decorator]

@@ -21,6 +21,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "port": 8000,
     "command": None,
     "wrapped_commands": [],
+    "groups": {},
     "api_key": None,
     "max_connections": 10,
     "max_message_size": 1024 * 1024, # 1MB

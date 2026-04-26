@@ -29,6 +29,42 @@
       "type": "string",
       "description": "The command to run in proxy mode."
     },
+    "groups": {
+      "type": "object",
+      "description": "Named config group presets reusable across wrapped commands via apply.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "forbidden_args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Prefixes of arguments that are blocked for security (opt-out)."
+          },
+          "forbidden_patterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Regex patterns that are blocked for security (opt-out)."
+          },
+          "allowed_args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Prefixes of arguments that are exclusively allowed (opt-in)."
+          },
+          "allowed_patterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Regex patterns that are exclusively allowed (opt-in)."
+          },
+          "cwd": { "type": "string" },
+          "env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "timeout": { "type": "integer" }
+        },
+        "additionalProperties": false
+      }
+    },
     "wrapped_commands": {
       "type": "array",
       "items": {
@@ -37,6 +73,11 @@
           "name": { "type": "string" },
           "description": { "type": "string" },
           "command": { "type": "string" },
+          "apply": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Names of groups (from top-level groups) to merge into this command."
+          },
           "forbidden_args": {
             "type": "array",
             "items": { "type": "string" },

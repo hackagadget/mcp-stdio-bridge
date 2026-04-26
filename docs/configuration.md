@@ -50,6 +50,7 @@ Directly exposes one or more standard CLI tools as MCP tools. The bridge hosts a
 | `port` | `integer` | `8000` | The port to bind the server to (SSE only). |
 | `command` | `string` | `null` | **(Proxy Mode Only)** The command to execute for each MCP session. |
 | `wrapped_commands` | `list` | `[]` | **(Wrapper Mode Only)** List of CLI tools to wrap (see below). |
+| `groups` | `object` | `{}` | **(Wrapper Mode Only)** Named config group presets reusable across wrapped commands via `apply` (see below). |
 | `verbose` | `boolean` | `false` | If `true`, all JSON-RPC messages will be logged. |
 | `api_key` | `string` | `null` | Optional API key for authentication (SSE only). |
 | `max_connections` | `integer` | `10` | The maximum number of concurrent MCP sessions allowed. |
@@ -81,6 +82,7 @@ Each entry in `wrapped_commands` is an object:
 | `name` | `string` | **(Required)** The tool name (e.g. `"wp_cli"`). |
 | `description` | `string` | **(Required)** Description for the LLM. |
 | `command` | `string` | **(Required)** The base executable (e.g. `"/usr/local/bin/wp"`). |
+| `apply` | `list` | List of group names (from top-level `groups`) to merge into this command's config. |
 | `forbidden_args` | `list` | List of blocked argument prefixes for security (denylist). |
 | `forbidden_patterns` | `list` | List of blocked regex patterns for security (denylist). |
 | `allowed_args` | `list` | List of exclusively permitted argument prefixes (allowlist). |
@@ -90,6 +92,45 @@ Each entry in `wrapped_commands` is an object:
 | `timeout` | `integer` | Execution timeout in seconds (default: 30). |
 
 **Note**: `forbidden_args` and `allowed_args` / `allowed_patterns` are mutually exclusive — a tool using both will be skipped at startup. However, `forbidden_patterns` can be freely combined with either approach and is always evaluated last as a final veto, making it the recommended way to block dangerous flags (e.g. `--exec`, `--require`) regardless of which security model the tool uses.
+
+### Config Groups
+
+Config groups are named presets defined at the top level under `groups` and applied to individual wrapped commands via the `apply` key. This eliminates duplication when multiple commands share the same security policy, timeout, or environment settings.
+
+**Merge semantics:**
+- **List fields** (`forbidden_patterns`, `forbidden_args`, `allowed_args`, `allowed_patterns`): values from all applied groups are unioned, then any per-command values are added on top.
+- **Scalar fields** (`timeout`, `cwd`, `env`): per-command values always win. If no per-command value is set, the last applied group's value is used (groups are applied in order).
+
+**Example:**
+
+```yaml
+groups:
+  wp_safety:
+    forbidden_patterns:
+      - "--exec"
+      - "--require"
+      - "--ssh"
+      - "--http"
+  slow_ops:
+    timeout: 120
+
+wrapped_commands:
+  - name: "wp_core"
+    apply: [wp_safety]
+    command: "wp"
+    allowed_args:
+      - "core version"
+      - "core check-update"
+
+  - name: "wp_db"
+    apply: [wp_safety, slow_ops]
+    command: "wp"
+    allowed_args:
+      - "db check"
+      - "db tables"
+```
+
+Groups do not conflict with per-command security fields — both are merged. The existing restriction that `forbidden_args` and `allowed_args`/`allowed_patterns` are mutually exclusive still applies after group expansion.
 
 ## Example `config.yaml`
 

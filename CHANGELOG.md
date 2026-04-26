@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-26
+
+### Added
+
+- **Config groups** (`groups` + `apply`): named presets defined once at the top level of
+  `config.yaml` and applied to individual wrapped commands via the `apply` key. Eliminates
+  the need to duplicate `forbidden_patterns`, `forbidden_args`, `timeout`, `cwd`, or `env`
+  across every command entry.
+  - List fields (`forbidden_patterns`, `forbidden_args`, `allowed_args`, `allowed_patterns`)
+    are unioned across all applied groups and any per-command values.
+  - Scalar fields (`timeout`, `cwd`, `env`) follow last-group-wins ordering, with
+    per-command values always taking final precedence.
+  - Unknown group names log a warning and are skipped without affecting the tool.
+  - The existing allowlist/denylist mutual-exclusivity check runs after group expansion.
+- `groups` added to `schema.json` (top-level object) and `apply` added to the
+  `wrapped_commands` item schema.
+
 ## [1.0.3.post1] - 2026-04-26
 
 ### Fixed
