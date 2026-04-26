@@ -35,13 +35,14 @@ def create_wrapper_server() -> Server:
         for cmd_config in settings.get("wrapped_commands", []):
             name = cmd_config["name"]
             forbidden_args = cmd_config.get("forbidden_args", [])
-            forbidden_patterns = cmd_config.get("forbidden_patterns", [])
             allowed_args = cmd_config.get("allowed_args", [])
             allowed_patterns = cmd_config.get("allowed_patterns", [])
 
             if (allowed_args or allowed_patterns) and forbidden_args:
-                logger.error(f"Command '{name}' has both allowed_args and forbidden_args security rules. "
-                             f"Skipping.")
+                logger.error(
+                    f"Command '{name}' has both allowed_args and forbidden_args "
+                    f"security rules. Skipping."
+                )
                 continue
             tools_map[name] = cmd_config
         return tools_map

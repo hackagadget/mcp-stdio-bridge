@@ -220,8 +220,10 @@ async def test_wrapper_allowed_args_with_forbidden_patterns() -> None:
         mock_run.return_value = mock_result
 
         req = types.CallToolRequest(
-            params=types.CallToolRequestParams(name="combo_tool",
-                                               arguments={"subcommand": "plugin list --format=json"})
+            params=types.CallToolRequestParams(
+                name="combo_tool",
+                arguments={"subcommand": "plugin list --format=json"}
+            )
         )
         result = await handler(req)
         assert result.root.content[0].text == "plugin output"
