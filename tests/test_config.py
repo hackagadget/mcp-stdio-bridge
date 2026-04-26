@@ -4,6 +4,7 @@ import json
 import jsonschema
 import pytest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 from mcp_stdio_bridge.config import settings, finalize_settings, parse_args
 
@@ -231,6 +232,124 @@ def test_get_config_files_includes_explicit_config(tmp_path: Path,
 
 
 # ---------------------------------------------------------------------------
+# generate_config
+# ---------------------------------------------------------------------------
+
+def test_generate_config_includes_non_default_values() -> None:
+    """Non-default CLI values appear in the generated YAML."""
+    from mcp_stdio_bridge.config import generate_config
+    import argparse
+    args = argparse.Namespace(
+        config=None, check_config=False, warnings_as_errors=False,
+        generate_api_key=False, generate_config=True,
+        mode=None, transport=None, host=None, port=9000,
+        command="npx mcp-server", api_key=None, max_connections=None,
+        max_message_size=None, verbose=False, logging_level=None,
+        logging_config=None, ssl_keyfile=None, ssl_certfile=None,
+        ssl_keyfile_password=None, ssl_ca_certs=None, ssl_crlfile=None,
+        ssl_client_cert_required=False, ssl_protocol=None, ssl_ciphers=None,
+        hsts=None, security_headers=None, cors_origins=None,
+        idle_timeout=None, rate_limit_requests=None, rate_limit_window=None,
+        env_allowlist=None, env_denylist=None, watch_config=False,
+    )
+    output = generate_config(args)
+    data = yaml.safe_load(output)
+    assert data["command"] == "npx mcp-server"
+    assert data["port"] == 9000
+
+
+def test_generate_config_omits_default_values() -> None:
+    """Values equal to their defaults are not written to the output."""
+    from mcp_stdio_bridge.config import generate_config
+    import argparse
+    args = argparse.Namespace(
+        config=None, check_config=False, warnings_as_errors=False,
+        generate_api_key=False, generate_config=True,
+        mode=None, transport=None, host=None, port=None,
+        command="echo", api_key=None, max_connections=None,
+        max_message_size=None, verbose=False, logging_level=None,
+        logging_config=None, ssl_keyfile=None, ssl_certfile=None,
+        ssl_keyfile_password=None, ssl_ca_certs=None, ssl_crlfile=None,
+        ssl_client_cert_required=False, ssl_protocol=None, ssl_ciphers=None,
+        hsts=None, security_headers=None, cors_origins=None,
+        idle_timeout=None, rate_limit_requests=None, rate_limit_window=None,
+        env_allowlist=None, env_denylist=None, watch_config=False,
+    )
+    output = generate_config(args)
+    data = yaml.safe_load(output)
+    # verbose=False is the default — must not appear
+    assert "verbose" not in data
+    # port is absent (None → filtered) — must not appear
+    assert "port" not in data
+
+
+def test_generate_config_embeds_api_key() -> None:
+    """When --generate-api-key is also set, the key appears in the YAML output."""
+    from mcp_stdio_bridge.config import generate_config
+    import argparse
+    args = argparse.Namespace(
+        config=None, check_config=False, warnings_as_errors=False,
+        generate_api_key=True, generate_config=True,
+        mode=None, transport=None, host=None, port=None,
+        command="echo", api_key=None, max_connections=None,
+        max_message_size=None, verbose=False, logging_level=None,
+        logging_config=None, ssl_keyfile=None, ssl_certfile=None,
+        ssl_keyfile_password=None, ssl_ca_certs=None, ssl_crlfile=None,
+        ssl_client_cert_required=False, ssl_protocol=None, ssl_ciphers=None,
+        hsts=None, security_headers=None, cors_origins=None,
+        idle_timeout=None, rate_limit_requests=None, rate_limit_window=None,
+        env_allowlist=None, env_denylist=None, watch_config=False,
+    )
+    output = generate_config(args)
+    data = yaml.safe_load(output)
+    assert "api_key" in data
+    assert len(data["api_key"]) >= 32
+
+
+def test_generate_config_excludes_cli_only_keys() -> None:
+    """Utility flags like check_config and warnings_as_errors are not emitted."""
+    from mcp_stdio_bridge.config import generate_config
+    import argparse
+    args = argparse.Namespace(
+        config=None, check_config=True, warnings_as_errors=True,
+        generate_api_key=False, generate_config=True,
+        mode=None, transport=None, host=None, port=None,
+        command="echo", api_key=None, max_connections=None,
+        max_message_size=None, verbose=False, logging_level=None,
+        logging_config=None, ssl_keyfile=None, ssl_certfile=None,
+        ssl_keyfile_password=None, ssl_ca_certs=None, ssl_crlfile=None,
+        ssl_client_cert_required=False, ssl_protocol=None, ssl_ciphers=None,
+        hsts=None, security_headers=None, cors_origins=None,
+        idle_timeout=None, rate_limit_requests=None, rate_limit_window=None,
+        env_allowlist=None, env_denylist=None, watch_config=False,
+    )
+    output = generate_config(args)
+    data = yaml.safe_load(output)
+    for key in ("check_config", "warnings_as_errors", "generate_api_key", "generate_config"):
+        assert key not in data
+
+
+def test_generate_config_has_header_comment() -> None:
+    """Output starts with a comment identifying the generator."""
+    from mcp_stdio_bridge.config import generate_config
+    import argparse
+    args = argparse.Namespace(
+        config=None, check_config=False, warnings_as_errors=False,
+        generate_api_key=False, generate_config=True,
+        mode=None, transport=None, host=None, port=None,
+        command="echo", api_key=None, max_connections=None,
+        max_message_size=None, verbose=False, logging_level=None,
+        logging_config=None, ssl_keyfile=None, ssl_certfile=None,
+        ssl_keyfile_password=None, ssl_ca_certs=None, ssl_crlfile=None,
+        ssl_client_cert_required=False, ssl_protocol=None, ssl_ciphers=None,
+        hsts=None, security_headers=None, cors_origins=None,
+        idle_timeout=None, rate_limit_requests=None, rate_limit_window=None,
+        env_allowlist=None, env_denylist=None, watch_config=False,
+    )
+    assert generate_config(args).startswith("# Generated by mcp-stdio-bridge")
+
+
+# ---------------------------------------------------------------------------
 # validate_settings
 # ---------------------------------------------------------------------------
 
@@ -310,7 +429,7 @@ def test_validate_settings_valid_wrapper() -> None:
 # check_config
 # ---------------------------------------------------------------------------
 
-def _make_args(**kwargs: object) -> object:
+def _make_args(**kwargs: Any) -> object:
     """Build a minimal argparse.Namespace for check_config tests."""
     import argparse
     defaults = dict(config=None, check_config=True, warnings_as_errors=False,
@@ -441,6 +560,61 @@ def test_check_config_explicit_config_path(
     args = _make_args(config=str(explicit))
     assert check_config(args, False) == 0  # type: ignore[arg-type]
     assert str(explicit) in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# CLI dispatch for --generate-config
+# ---------------------------------------------------------------------------
+
+def test_main_generate_config_exits_zero(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """--generate-config prints YAML to stdout and exits 0 without starting the bridge."""
+    from mcp_stdio_bridge.main import main as cli_main
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["mcp-stdio-bridge", "--generate-config", "--command", "echo"]):
+        with patch("anyio.run") as mock_run:
+            with pytest.raises(SystemExit) as exc:
+                cli_main()
+            assert exc.value.code == 0
+            mock_run.assert_not_called()
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert data["command"] == "echo"
+
+
+def test_main_generate_config_with_api_key(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """--generate-config --generate-api-key embeds the key in YAML instead of printing it."""
+    from mcp_stdio_bridge.main import main as cli_main
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with patch("sys.argv", ["mcp-stdio-bridge", "--generate-config", "--generate-api-key",
+                             "--command", "echo"]):
+        with pytest.raises(SystemExit) as exc:
+            cli_main()
+        assert exc.value.code == 0
+    out = capsys.readouterr().out
+    data = yaml.safe_load(out)
+    assert "api_key" in data
+    assert len(data["api_key"]) >= 32
+    # Key must not also appear as a bare line (it should only be in the YAML)
+    assert data["api_key"] in out
+
+
+def test_main_generate_api_key_alone_unchanged(capsys: pytest.CaptureFixture[str]) -> None:
+    """--generate-api-key without --generate-config still just prints a bare key."""
+    from mcp_stdio_bridge.main import main as cli_main
+    with patch("sys.argv", ["mcp-stdio-bridge", "--generate-api-key"]):
+        with pytest.raises(SystemExit) as exc:
+            cli_main()
+        assert exc.value.code == 0
+    out = capsys.readouterr().out.strip()
+    # Should be a single token with no YAML structure
+    assert "\n" not in out
+    assert ":" not in out
+    assert len(out) >= 32
 
 
 # ---------------------------------------------------------------------------

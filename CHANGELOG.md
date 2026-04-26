@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Warnings as Errors**: Added `--warnings-as-errors` flag (used with `--check-config`) that
   promotes all warnings to errors, enabling strict validation in CI or systemd/rc.d
   `ExecStartPre=` checks.
+- **Config Generator**: Added `--generate-config` flag that prints a minimal YAML config
+  built from the supplied CLI flags (only settings that differ from their defaults are
+  emitted). When combined with `--generate-api-key`, the generated key is embedded in the
+  `api_key` field of the output instead of being printed separately.
 
 ### Fixed
 

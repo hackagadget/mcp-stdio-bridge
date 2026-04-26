@@ -108,8 +108,13 @@ def main() -> None:
         print(f"CLI Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if args.generate_api_key:
+    if args.generate_api_key and not args.generate_config:
         print(secrets.token_urlsafe(32))
+        sys.exit(0)
+
+    if args.generate_config:
+        from .config import generate_config
+        print(generate_config(args), end="")
         sys.exit(0)
 
     if args.check_config:
