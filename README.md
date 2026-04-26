@@ -126,6 +126,9 @@ docker-compose up -d
 | `--rate-limit-window` | Rate limit window size in seconds | `60` |
 | `--version` | Display the application version and exit | |
 | `-v`, `--verbose` | Enable verbose logging | `False` |
+| `--generate-api-key` | Print a random URL-safe API key and exit | |
+| `--check-config` | Validate configuration and exit (like `nginx -t`) | |
+| `--warnings-as-errors` | Treat config warnings as errors (use with `--check-config`) | |
 
 > **Note**: When operating in Stdio transport mode, all non-JSON-RPC output (including warnings, errors, and informational logs) is directed to `sys.stderr` to maintain JSON-RPC stream integrity.
 

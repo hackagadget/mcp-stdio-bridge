@@ -6,9 +6,30 @@ The bridge can be configured using a YAML file. It searches for configuration in
 2.  `config.yaml` in the current working directory.
 3.  `~/.mcp-stdio-bridge.yaml` in the user's home directory.
 
+## Validating Configuration
+
+Run `--check-config` to validate your configuration without starting the bridge (modelled on `nginx -t`). Each config file is parsed and checked against the JSON schema, then the merged result is checked for semantic errors:
+
+```bash
+mcp-stdio-bridge --check-config --config /etc/mcp/bridge.yaml
+```
+
+Exit code is `0` on success, `1` if any error is found. Warnings (e.g. SSE-only options set while using stdio transport) are printed but do not affect the exit code unless `--warnings-as-errors` is also passed:
+
+```bash
+mcp-stdio-bridge --check-config --warnings-as-errors --config /etc/mcp/bridge.yaml
+```
+
+This makes it suitable for use in a systemd `ExecStartPre=` line or a FreeBSD rc.d `precmd`:
+
+```ini
+ExecStartPre=mcp-stdio-bridge --check-config --warnings-as-errors --config /etc/mcp/bridge.yaml
+ExecStart=mcp-stdio-bridge --config /etc/mcp/bridge.yaml
+```
+
 ## JSON Schema
 
-A JSON Schema is available in the root of the repository as `schema.json`. You can use this for validation and autocompletion in many IDEs.
+The JSON schema is bundled with the package at `src/mcp_stdio_bridge/schema.json`. You can use this for validation and autocompletion in many IDEs.
 
 ## Dynamic Configuration Reload
 
@@ -26,7 +47,7 @@ Add this to your `settings.json`:
 
 ```json
 "yaml.schemas": {
-    "./schema.json": ["config.yaml", ".mcp-stdio-bridge.yaml"]
+    "./src/mcp_stdio_bridge/schema.json": ["config.yaml", ".mcp-stdio-bridge.yaml"]
 }
 ```
 
