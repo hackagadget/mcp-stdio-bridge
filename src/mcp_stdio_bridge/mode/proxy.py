@@ -155,8 +155,3 @@ async def bridge_streams(sse_read: MemoryObjectReceiveStream[Any],
         tg.start_soon(drain_stderr)
         tg.start_soon(idle_watcher)
 
-    try:
-        proc.terminate()
-    except Exception as e:
-        logger.debug(f"Failed to terminate subprocess: {e}")
-

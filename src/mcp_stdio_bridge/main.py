@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: Unlicense
+# SPDX-License-Identifier: Unlicense
 """
 Main Entry Point
 ================
@@ -12,9 +12,22 @@ import sys
 import argparse
 import emoji
 import os
+import signal
+from typing import Any
 from .config import parse_args, finalize_settings, settings, reload_settings, get_config_files
 from .logging_utils import configure_logging, logger
 from .transport import run_stdio_transport, run_sse_transport
+
+def _setup_signal_handlers() -> None:
+    """Register signal handlers for graceful shutdown on POSIX."""
+    if sys.platform != "win32":
+        def handle_sigterm(signum: int, frame: Any) -> None:
+            logger.info(emoji.emojize(f":door: Received signal {signum}. Shutting down..."))
+            # Raising KeyboardInterrupt allows anyio.run to catch it and 
+            # trigger graceful cleanup of task groups and context managers.
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
 
 async def config_watcher() -> None:
     """
@@ -83,6 +96,7 @@ def main() -> None:
         sys.exit(1)
 
     finalize_settings(args)
+    _setup_signal_handlers()
 
     # Setup Logging subsystem
     custom_logging = configure_logging(settings["logging_level"], settings["logging_config"])

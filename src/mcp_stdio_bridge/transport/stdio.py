@@ -56,7 +56,15 @@ async def run_stdio_transport() -> None:
                     finally:
                         if proc.returncode is None:
                             try:
+                                logger.info(f"Terminating subprocess (PID: {proc.pid})...")
                                 proc.terminate()
+                                # Give it a short window to exit gracefully
+                                with anyio.move_on_after(2):
+                                    await proc.wait()
+                                
+                                if proc.returncode is None:
+                                    logger.warning(f"Subprocess (PID: {proc.pid}) did not exit. Killing...")
+                                    proc.kill()
                             except Exception as e:
                                 logger.error(emoji.emojize(f":cross_mark: subprocess terminate "
                                                            f"error: {e}"))

@@ -299,8 +299,8 @@ async def test_proxy_bridge_streams_proc_terminate_fail() -> None:
             # Catch the cancellation that happens when sub-tasks finish
             pass
 
-    # 4. Verify terminate was called despite the injected failure
-    mock_proc.terminate.assert_called_once()
+    # 4. Verify terminate was NOT called here as it's now handled by the transport layer
+    mock_proc.terminate.assert_not_called()
 
 @pytest.mark.anyio
 async def test_proxy_proc_to_sse_empty_line() -> None:
