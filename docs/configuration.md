@@ -154,6 +154,8 @@ You can set the verbosity of the application using `logging_level`. Supported va
 ### Custom Logging Configuration
 For advanced users, the `logging_config` setting allows you to point to a standard Python logging configuration file (`.yaml`, `.json`, or `.ini`).
 
+> **Operational Note**: All configuration-level warnings and errors are directed to `sys.stderr`. This ensures that when the bridge is running in `stdio` transport mode, the JSON-RPC stream remains uncorrupted by informational or error text.
+
 ## Environment Variables
 
 Settings can be overridden by environment variables with the `MCP_` prefix:

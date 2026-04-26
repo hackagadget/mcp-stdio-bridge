@@ -1,9 +1,20 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.2.2] - 2026-04-26
+
+### Added
+
+- **Version Flag**: Added `--version` CLI flag to display the application version and exit.
+
+### Fixed
+
+- **Stream Integrity**: Redirected configuration warnings and error messages to `sys.stderr`. This prevents corruption of the JSON-RPC stream when operating in Stdio transport mode.
+- **CLI Logic**: Improved boolean flag handling in `parse_args` to avoid spurious "option ignored" warnings when using Stdio transport if the flags were not explicitly provided.
 
 ## [1.2.1.post1] - 2026-04-26
 
@@ -18,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Graceful Shutdown**: Added `SIGTERM` handler on POSIX systems to trigger clean exit via `KeyboardInterrupt`.
 - **Subprocess Cleanup**: Enhanced SSE and Stdio transports with a 2-second wait timeout and `kill()` fallback for zombie processes.
 - **Process Ownership**: Centralized subprocess termination in the transport layer for better reliability.
-- **Code Quality**: Achieved 100% test coverage and resolved all `bandit` and `ruff` linting issues.
+- **Code Quality**: Achieved 100% test coverage across all modules and resolved all `bandit` and `ruff` linting issues.
 
 ## [1.2.0] - 2026-04-26
 
@@ -114,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker support** — `Dockerfile` and `docker-compose.yaml` included.
 - **100% test coverage** across all modules.
 
+[1.2.2]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.2
 [1.2.1.post1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.1.post1
 [1.2.1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.1
 [1.2.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.0

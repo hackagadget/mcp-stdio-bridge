@@ -39,6 +39,16 @@ def test_main_config_loading(tmp_path: Path) -> None:
             cli_main()
             assert settings["command"] == "test-cmd"
 
+def test_config_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that --version flag prints version and exits."""
+    from mcp_stdio_bridge import __version__
+    with patch("sys.argv", ["mcp-stdio-bridge", "--version"]):
+        with pytest.raises(SystemExit) as e:
+            parse_args()
+        assert e.value.code == 0
+        captured = capsys.readouterr()
+        assert __version__ in captured.out
+
 def test_config_search_hierarchy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test configuration loading hierarchy (Home directory)."""
     config_data = {"command": "home-cmd"}
@@ -56,13 +66,13 @@ def test_config_search_hierarchy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             assert settings["command"] == "home-cmd"
 
 def test_config_load_exception(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test load_config handles exceptions gracefully and prints error."""
+    """Test load_config handles exceptions gracefully and prints error to stderr."""
     from mcp_stdio_bridge.config import load_config
     with patch("mcp_stdio_bridge.config.os.path.exists", return_value=True):
         with patch("mcp_stdio_bridge.config.open", side_effect=RuntimeError("Fail")):
              assert load_config("some.yaml") == {}
              captured = capsys.readouterr()
-             assert "Error loading config from some.yaml: Fail" in captured.out
+             assert "Error loading config from some.yaml: Fail" in captured.err
 
 def test_get_env_overrides_types(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test environment variable type conversion (bool, int, list)."""
@@ -154,16 +164,24 @@ def test_config_new_cli_flags() -> None:
         assert settings["env_allowlist"] == ["PATH", "HOME"]
         assert settings["env_denylist"] == ["SECRET_KEY"]
 
+def test_config_no_spurious_warnings(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that no warnings are printed in stdio mode if options are not provided."""
+    test_args = ["mcp-stdio-bridge", "--transport", "stdio"]
+    with patch("sys.argv", test_args):
+        finalize_settings(parse_args())
+        captured = capsys.readouterr()
+        assert "Warning" not in captured.err
+
 def test_config_validation_warnings(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that mutually exclusive or irrelevant options trigger warnings."""
+    """Test that mutually exclusive or irrelevant options trigger warnings on stderr."""
     # 1. Test SSE options with Stdio transport
     test_args = ["mcp-stdio-bridge", "--transport", "stdio", "--port", "9000",
                  "--api-key", "secret"]
     with patch("sys.argv", test_args):
         finalize_settings(parse_args())
         captured = capsys.readouterr()
-        assert "Warning: Option --port is ignored in Stdio transport mode." in captured.out
-        assert "Warning: Option --api-key is ignored in Stdio transport mode." in captured.out
+        assert "Warning: Option --port is ignored in Stdio transport mode." in captured.err
+        assert "Warning: Option --api-key is ignored in Stdio transport mode." in captured.err
 
     # 2. Test Allowlist and Denylist precedence warning
     test_args = ["mcp-stdio-bridge", "--env-allowlist", "PATH", "--env-denylist", "SECRET"]
@@ -171,7 +189,7 @@ def test_config_validation_warnings(capsys: pytest.CaptureFixture[str]) -> None:
         finalize_settings(parse_args())
         captured = capsys.readouterr()
         assert "Warning: Both env_allowlist and env_denylist are set. env_allowlist will " \
-               "take precedence." in captured.out
+               "take precedence." in captured.err
 
 def test_reload_settings_returns_false_before_finalize() -> None:
     """reload_settings() returns False when _last_args is None (before finalize_settings

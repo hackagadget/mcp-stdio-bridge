@@ -8,6 +8,7 @@ CLI arguments, YAML files, and environment variables. Implements
 a strict hierarchy where CLI > config.yaml > ~/.mcp-stdio-bridge.yaml.
 """
 import os
+import sys
 import yaml
 import argparse
 from typing import Any, Dict
@@ -61,7 +62,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
         with open(config_path, "r") as f:
             return yaml.safe_load(f) or {}
     except Exception as e:
-        print(f"Error loading config from {config_path}: {e}")
+        print(f"Error loading config from {config_path}: {e}", file=sys.stderr)
         return {}
 
 def get_env_overrides() -> Dict[str, Any]:
@@ -84,10 +85,12 @@ def get_env_overrides() -> Dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
+    from . import __version__
     parser = argparse.ArgumentParser(
         description="MCP Stdio Bridge - Gateway between SSE/Stdio transports.",
         exit_on_error=False # Prevent sys.exit in tests
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", help="Path to config.yaml")
     parser.add_argument("--mode", choices=["proxy", "command-wrapper"], help="Operation mode")
     parser.add_argument("--transport", choices=["sse", "stdio"], help="Transport protocol")
@@ -114,9 +117,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ssl-ciphers", help="SSL ciphers")
 
     # Security Flags
-    parser.add_argument("--hsts", action="store_true", help="Enable HSTS")
+    parser.add_argument("--hsts", action="store_true", default=None, help="Enable HSTS")
     parser.add_argument("--no-security-headers", dest="security_headers",
-                        action="store_false", help="Disable default security headers")
+                        action="store_false", default=None, help="Disable default security headers")
     parser.add_argument("--cors-origins", nargs="+", help="CORS origins")
     parser.add_argument("--idle-timeout", type=int,
                         help="Idle timeout for proxy sessions (seconds)")
@@ -199,7 +202,7 @@ def _apply_settings(args: argparse.Namespace) -> None:
         for key in sse_only_keys:
             if key in cli_dict:
                 print(f"Warning: Option --{key.replace('_', '-')} is ignored in Stdio "
-                      f"transport mode.")
+                      f"transport mode.", file=sys.stderr)
 
     if final["mode"] == "proxy" and not final["command"]:
         pass
@@ -211,7 +214,7 @@ def _apply_settings(args: argparse.Namespace) -> None:
         final["env_denylist"] != DEFAULT_SETTINGS["env_denylist"]
     ):
         print("Warning: Both env_allowlist and env_denylist are set. env_allowlist will "
-              "take precedence.")
+              "take precedence.", file=sys.stderr)
 
     settings.clear()
     settings.update(final)

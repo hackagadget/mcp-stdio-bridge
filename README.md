@@ -122,7 +122,12 @@ docker-compose up -d
 | `--log-level` | Set the logging level (DEBUG, INFO, etc.) | `INFO` |
 | `--logging-config` | Path to a custom logging config file | `None` |
 | `--watch-config` | Enable dynamic config reloading | `False` |
+| `--rate-limit-requests` | Max requests per client per window (0 = disabled) | `0` |
+| `--rate-limit-window` | Rate limit window size in seconds | `60` |
+| `--version` | Display the application version and exit | |
 | `-v`, `--verbose` | Enable verbose logging | `False` |
+
+> **Note**: When operating in Stdio transport mode, all non-JSON-RPC output (including warnings, errors, and informational logs) is directed to `sys.stderr` to maintain JSON-RPC stream integrity.
 
 ## Development
 
