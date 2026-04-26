@@ -66,9 +66,11 @@ config.yaml
 *,cover
 
 # AI/Project artifacts
-GEMINI.local.md
+*.local.json
+*.local.md
+*.local.ps1
+*.local.yaml
 CONVERSATION_HISTORY.md
 implementation_plan.md
-settings.local.json
 task.md
 walkthrough.md
