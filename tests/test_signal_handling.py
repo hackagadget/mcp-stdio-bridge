@@ -14,21 +14,33 @@ def test_setup_signal_handlers_posix() -> None:
          patch("signal.signal") as mock_signal:
         _setup_signal_handlers()
         assert mock_signal.called
-        # Verify it registers SIGTERM
-        args, _ = mock_signal.call_args_list[0]
-        assert args[0] == signal.SIGTERM
-        
+        # Verify it registers SIGTERM and SIGINT
+        sig_calls = [call[0][0] for call in mock_signal.call_args_list]
+        assert signal.SIGTERM in sig_calls
+        assert signal.SIGINT in sig_calls
+
         # Test the handler function
-        handler = args[1]
+        # Get the handler for SIGINT
+        handler = [
+            call[0][1] for call in mock_signal.call_args_list if call[0][0] == signal.SIGINT
+        ][0]
+
+        # First call should raise KeyboardInterrupt
         with pytest.raises(KeyboardInterrupt):
-            handler(signal.SIGTERM, None)
+            handler(signal.SIGINT, None)
+
+        # Second call should return None (ignored)
+        assert handler(signal.SIGINT, None) is None
 
 def test_setup_signal_handlers_win32() -> None:
-    """Test _setup_signal_handlers on win32 (no-op)."""
+    """Test _setup_signal_handlers on win32."""
     with patch("sys.platform", "win32"), \
          patch("signal.signal") as mock_signal:
         _setup_signal_handlers()
-        assert not mock_signal.called
+        # On Win32 we only register SIGINT
+        sig_calls = [call[0][0] for call in mock_signal.call_args_list]
+        assert signal.SIGINT in sig_calls
+        assert signal.SIGTERM not in sig_calls
 
 def _make_mock_proc():
     mock_proc = MagicMock()
@@ -37,14 +49,14 @@ def _make_mock_proc():
     mock_proc.kill = MagicMock()
     mock_proc.wait = AsyncMock()
     mock_proc.pid = 1234
-    
+
     # Mock for 'async with await anyio.open_process(...) as proc'
     class MockProcessContext:
         async def __aenter__(self):
             return mock_proc
         async def __aexit__(self, exc_type, exc, tb):
             pass
-    
+
     return mock_proc, MockProcessContext()
 
 @pytest.mark.anyio
@@ -52,14 +64,14 @@ async def test_sse_transport_terminate_error() -> None:
     """Test that SSE transport handles subprocess termination error."""
     settings["mode"] = "proxy"
     settings["command"] = "echo"
-    
+
     mock_request = MagicMock()
     mock_request.headers = {}
     mock_request.client.host = "127.0.0.1"
-    
+
     mock_proc, mock_ctx = _make_mock_proc()
     mock_proc.terminate.side_effect = Exception("Terminate fail")
-    
+
     class MockSSEContext:
         async def __aenter__(self):
             return AsyncMock(), AsyncMock()
@@ -70,9 +82,9 @@ async def test_sse_transport_terminate_error() -> None:
          patch("anyio.open_process", return_value=mock_ctx), \
          patch("mcp_stdio_bridge.transport.sse.sse.connect_sse", return_value=MockSSEContext()), \
          patch("mcp_stdio_bridge.transport.sse.bridge_streams"):
-        
+
         await handle_sse(mock_request)
-        
+
         assert mock_proc.terminate.called
 
 @pytest.mark.anyio
@@ -80,14 +92,14 @@ async def test_stdio_transport_terminate_error() -> None:
     """Test that Stdio transport handles subprocess termination error."""
     settings["mode"] = "proxy"
     settings["command"] = "echo"
-    
+
     mock_proc, mock_ctx = _make_mock_proc()
     mock_proc.terminate.side_effect = Exception("Terminate fail")
-    
+
     # Setup for stdio_server mock
     mock_read = AsyncMock()
     mock_write = AsyncMock()
-    
+
     class MockStdioContext:
         async def __aenter__(self):
             return mock_read, mock_write
@@ -97,9 +109,9 @@ async def test_stdio_transport_terminate_error() -> None:
     with patch("mcp_stdio_bridge.transport.stdio.stdio_server", return_value=MockStdioContext()), \
          patch("anyio.open_process", return_value=mock_ctx), \
          patch("mcp_stdio_bridge.transport.stdio.bridge_streams"):
-        
+
         await run_stdio_transport()
-        
+
         assert mock_proc.terminate.called
 
 @pytest.mark.anyio
@@ -107,17 +119,17 @@ async def test_sse_transport_kill_fallback() -> None:
     """Test that SSE transport falls back to kill() if wait() times out."""
     settings["mode"] = "proxy"
     settings["command"] = "echo"
-    
+
     mock_request = MagicMock()
     mock_request.headers = {}
     mock_request.client.host = "127.0.0.1"
-    
+
     mock_proc, mock_ctx = _make_mock_proc()
-    
+
     async def mock_wait():
         await anyio.sleep(10) # Longer than 2s timeout
     mock_proc.wait.side_effect = mock_wait
-    
+
     class MockSSEContext:
         async def __aenter__(self):
             return AsyncMock(), AsyncMock()
@@ -128,9 +140,9 @@ async def test_sse_transport_kill_fallback() -> None:
          patch("anyio.open_process", return_value=mock_ctx), \
          patch("mcp_stdio_bridge.transport.sse.sse.connect_sse", return_value=MockSSEContext()), \
          patch("mcp_stdio_bridge.transport.sse.bridge_streams"):
-        
+
         await handle_sse(mock_request)
-        
+
         assert mock_proc.terminate.called
         assert mock_proc.kill.called
 
@@ -139,16 +151,16 @@ async def test_stdio_transport_kill_fallback() -> None:
     """Test that Stdio transport falls back to kill() if wait() times out."""
     settings["mode"] = "proxy"
     settings["command"] = "echo"
-    
+
     mock_proc, mock_ctx = _make_mock_proc()
-    
+
     async def mock_wait():
         await anyio.sleep(10)
     mock_proc.wait.side_effect = mock_wait
-    
+
     mock_read = AsyncMock()
     mock_write = AsyncMock()
-    
+
     class MockStdioContext:
         async def __aenter__(self):
             return mock_read, mock_write
@@ -158,8 +170,8 @@ async def test_stdio_transport_kill_fallback() -> None:
     with patch("mcp_stdio_bridge.transport.stdio.stdio_server", return_value=MockStdioContext()), \
          patch("anyio.open_process", return_value=mock_ctx), \
          patch("mcp_stdio_bridge.transport.stdio.bridge_streams"):
-        
+
         await run_stdio_transport()
-        
+
         assert mock_proc.terminate.called
         assert mock_proc.kill.called

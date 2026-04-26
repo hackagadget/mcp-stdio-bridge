@@ -19,15 +19,27 @@ from .logging_utils import configure_logging, logger
 from .transport import run_stdio_transport, run_sse_transport
 
 def _setup_signal_handlers() -> None:
-    """Register signal handlers for graceful shutdown on POSIX."""
-    if sys.platform != "win32":
-        def handle_sigterm(signum: int, frame: Any) -> None:
-            logger.info(emoji.emojize(f":door: Received signal {signum}. Shutting down..."))
-            # Raising KeyboardInterrupt allows anyio.run to catch it and 
-            # trigger graceful cleanup of task groups and context managers.
-            raise KeyboardInterrupt
+    """Register signal handlers for graceful shutdown."""
+    shutdown_in_progress = False
 
-        signal.signal(signal.SIGTERM, handle_sigterm)
+    def handle_shutdown(signum: int, frame: Any) -> None:
+        nonlocal shutdown_in_progress
+        if shutdown_in_progress:
+            # Ignore subsequent signals to avoid interrupting the cleanup itself
+            # and causing noisy interpreter shutdown errors.
+            return
+
+        shutdown_in_progress = True
+        logger.info(emoji.emojize(f":door: Received signal {signum}. Shutting down..."))
+        # Raising KeyboardInterrupt allows anyio.run to catch it and
+        # trigger graceful cleanup of task groups and context managers.
+        raise KeyboardInterrupt
+
+    if sys.platform != "win32":
+        signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # Handle SIGINT (Ctrl+C) explicitly to manage repeated interruptions
+    signal.signal(signal.SIGINT, handle_shutdown)
 
 async def config_watcher() -> None:
     """
@@ -112,6 +124,15 @@ def main() -> None:
         anyio.run(start_app)
     except KeyboardInterrupt:
         pass
+    except BaseExceptionGroup as eg:
+        # anyio wraps exceptions from task groups in a BaseExceptionGroup.
+        # On Ctrl+C, uvicorn handles the first SIGINT itself then re-raises via
+        # signal.raise_signal(), which fires our handler inside the task group and
+        # produces a KeyboardInterrupt sub-exception here. Suppress it; re-raise
+        # anything else.
+        if not all(isinstance(e, KeyboardInterrupt) for e in eg.exceptions):
+            logger.critical(f"Application failed to start: {eg}")
+            sys.exit(1)
     except Exception as e:
         logger.critical(f"Application failed to start: {e}")
         sys.exit(1)

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **API Key Generator**: Added `--generate-api-key` CLI flag that prints a cryptographically
+  random URL-safe Base64 key (256-bit entropy) and exits, making it easy to generate a value
+  for the `api_key` config field without starting the bridge.
+
+### Fixed
+
+- **Clean Shutdown on Windows**: `Ctrl+C` no longer prints an `ExceptionGroup` traceback when
+  using SSE transport. Uvicorn handles the first `SIGINT` itself and re-raises it via
+  `signal.raise_signal()` after cleanup, which caused a `KeyboardInterrupt` to surface inside
+  the anyio task group and get wrapped in a `BaseExceptionGroup`. The top-level exception
+  handler now suppresses groups composed entirely of `KeyboardInterrupt`.
+
 ## [1.2.2] - 2026-04-26
 
 ### Added

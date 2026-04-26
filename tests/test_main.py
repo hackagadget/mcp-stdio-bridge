@@ -32,6 +32,24 @@ def test_main_keyboard_interrupt() -> None:
         with patch("anyio.run", side_effect=KeyboardInterrupt()):
             cli_main() # Should not raise
 
+def test_main_base_exception_group_keyboard_interrupt() -> None:
+    """BaseExceptionGroup containing only KeyboardInterrupt is swallowed silently."""
+    eg = BaseExceptionGroup("shutdown", [KeyboardInterrupt()])
+    with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
+        with patch("anyio.run", side_effect=eg):
+            cli_main()  # must not raise
+
+
+def test_main_base_exception_group_real_error() -> None:
+    """BaseExceptionGroup with a non-KeyboardInterrupt sub-exception exits with code 1."""
+    eg = BaseExceptionGroup("mixed", [KeyboardInterrupt(), RuntimeError("boom")])
+    with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
+        with patch("anyio.run", side_effect=eg):
+            with pytest.raises(SystemExit) as exc:
+                cli_main()
+            assert exc.value.code == 1
+
+
 def test_main_startup_fail() -> None:
     """Test that main() exits on startup exception."""
     with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo"]):
