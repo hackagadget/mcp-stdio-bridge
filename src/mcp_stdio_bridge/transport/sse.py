@@ -109,13 +109,15 @@ async def handle_sse(request: Request) -> Response:
                     # Explicit cleanup ensuring the subprocess is terminated.
                     if proc.returncode is None:
                         try:
-                            logger.info(f"Terminating subprocess (PID: {proc.pid}) for {client_ip}...")
+                            logger.info(f"Terminating subprocess (PID: {proc.pid}) "
+                                        f"for {client_ip}...")
                             proc.terminate()
                             with anyio.move_on_after(2):
                                 await proc.wait()
                             
                             if proc.returncode is None:
-                                logger.warning(f"Subprocess (PID: {proc.pid}) for {client_ip} did not exit. Killing...")
+                                logger.warning(f"Subprocess (PID: {proc.pid}) for {client_ip} "
+                                               "did not exit. Killing...")
                                 proc.kill()
                         except Exception as e:
                             logger.error(emoji.emojize(f":cross_mark: subprocess terminate "

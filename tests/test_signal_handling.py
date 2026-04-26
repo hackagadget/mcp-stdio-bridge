@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: Unlicense
-import sys
 import pytest
 import signal
 import anyio

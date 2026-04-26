@@ -63,7 +63,8 @@ async def run_stdio_transport() -> None:
                                     await proc.wait()
                                 
                                 if proc.returncode is None:
-                                    logger.warning(f"Subprocess (PID: {proc.pid}) did not exit. Killing...")
+                                    logger.warning(f"Subprocess (PID: {proc.pid}) did not exit. "
+                                                   "Killing...")
                                     proc.kill()
                             except Exception as e:
                                 logger.error(emoji.emojize(f":cross_mark: subprocess terminate "
