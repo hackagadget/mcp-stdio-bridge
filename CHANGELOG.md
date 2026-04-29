@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.1] - 2026-04-28
+
+### Added
+
+- **Global Working Directory**: Added support for a top-level `cwd` setting and a `--cwd` CLI
+  flag, providing a fallback working directory for all subprocesses in both proxy and wrapper
+  modes.
 
 ## [1.3.0] - 2026-04-28
 

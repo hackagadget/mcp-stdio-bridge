@@ -6,7 +6,7 @@ MCP Stdio Bridge Package
 Modular implementation of the MCP SSE <-> Stdio bridge.
 """
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 # --- WORKAROUND: rich.box encoding crash (Windows only) ---
 # Some Windows terminal environments crash when rich.box.Box

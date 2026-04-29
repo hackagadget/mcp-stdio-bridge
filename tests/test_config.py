@@ -2,6 +2,7 @@
 import yaml
 import jsonschema
 import pytest
+import argparse
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -606,7 +607,7 @@ def test_validate_settings_valid_wrapper() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_args(**kwargs: Any) -> object:
+def _make_args(**kwargs: Any) -> argparse.Namespace:
     """Build a minimal argparse.Namespace for check_config tests."""
     import argparse
 
@@ -898,7 +899,7 @@ def test_main_warnings_as_errors_flag(tmp_path: Path, monkeypatch: pytest.Monkey
 # ---------------------------------------------------------------------------
 
 
-def _client_args(**kwargs: Any) -> object:
+def _client_args(**kwargs: Any) -> argparse.Namespace:
     """Build a minimal Namespace for generate_client_config tests."""
     import argparse
 
@@ -1209,3 +1210,11 @@ def test_main_generate_client_config_output_file(
     assert str(Path(out_file).resolve()) in captured.err
     result = json.loads(Path(out_file).read_text())
     assert "servers" in result
+
+
+def test_config_global_cwd() -> None:
+    """Test that the global --cwd flag is correctly parsed into settings."""
+    test_cwd = "/home/user/test-cwd"
+    with patch("sys.argv", ["mcp-stdio-bridge", "--command", "echo", "--cwd", test_cwd]):
+        finalize_settings(parse_args())
+        assert settings["cwd"] == test_cwd

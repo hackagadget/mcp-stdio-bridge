@@ -172,6 +172,7 @@ async def _handle_proxy_sse(scope: Any, receive: Any, send: Any) -> None:
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
+                        cwd=settings.get("cwd"),
                     ) as proc:
                         logger.info(f"==> [PROXY-SSH] Subprocess PID: {proc.pid}")
                         await bridge_streams(recv_from_sse, send_to_client, proc)

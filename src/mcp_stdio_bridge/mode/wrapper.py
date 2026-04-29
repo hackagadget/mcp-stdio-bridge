@@ -102,7 +102,7 @@ def create_wrapper_server() -> Any:
         forbidden_patterns = cmd_config.get("forbidden_patterns", [])
         allowed_args = cmd_config.get("allowed_args", [])
         allowed_patterns = cmd_config.get("allowed_patterns", [])
-        work_dir = cmd_config.get("cwd")
+        work_dir = cmd_config.get("cwd") or settings.get("cwd")
         custom_env = cmd_config.get("env", {})
         time_limit = cmd_config.get("timeout", 30)
 

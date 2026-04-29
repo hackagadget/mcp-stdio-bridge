@@ -26,7 +26,11 @@ async def run_stdio_transport() -> None:
 
             cmd_list = shlex.split(settings["command"], posix=(sys.platform != "win32"))
             async with await anyio.open_process(
-                cmd_list, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                cmd_list,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=settings.get("cwd"),
             ) as proc:
                 logger.info(emoji.emojize(f":electric_plug: Stdio Proxy active (PID: {proc.pid})"))
 

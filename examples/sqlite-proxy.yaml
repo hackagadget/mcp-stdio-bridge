@@ -7,6 +7,9 @@ mode: "proxy"
 transport: "sse"
 port: 8080
 
+# If using relative paths for the database, set the global working directory.
+# cwd: "/path/to/project"
+
 # The command should point to the target MCP server executable
 # In this case, we use 'npx' to run the official SQLite server.
 command: "npx @modelcontextprotocol/server-sqlite --db /path/to/your/database.db"

@@ -6,6 +6,9 @@
 mode: "command-wrapper"
 transport: "stdio"
 
+# Set global cwd to the root of the repository you want to manage.
+# cwd: "/path/to/your/repo"
+
 wrapped_commands:
   - name: "git_status"
     description: "Check the current status of the repository"

@@ -44,6 +44,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "idle_timeout": 3600,
     "rate_limit_requests": 0,
     "rate_limit_window": 60,
+    "cwd": None,
     "wrapped_commands": [],
     "groups": {},
     "env_allowlist": None,
@@ -102,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-connections", type=int, help="Max concurrent SSE connections")
     parser.add_argument("--max-message-size", type=int, help="Max message size in bytes")
     parser.add_argument("--idle-timeout", type=int, help="Idle timeout in seconds")
+    parser.add_argument("--cwd", help="Global working directory for subprocesses")
     parser.add_argument(
         "--watch-config", action="store_true", help="Enable dynamic config reloading"
     )

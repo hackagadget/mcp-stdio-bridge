@@ -121,6 +121,7 @@ Directly exposes one or more standard CLI tools as MCP tools. The bridge hosts a
 | `rate_limit_requests` | `integer` | `0` | Requests allowed per window per IP. Set to 0 to disable. |
 | `rate_limit_window` | `integer` | `60` | Rate limit window size in seconds. |
 | `idle_timeout` | `integer` | `3600` | Session timeout in seconds for idle connections. Set to 0 to disable. |
+| `cwd` | `string` | `null` | Global working directory for subprocesses. If set, all subprocesses (in proxy and wrapper mode) will start in this directory unless overridden at the tool level. |
 | `env_allowlist` | `list` | `null` | If set, only these environment variables are passed to subprocesses. |
 | `env_denylist` | `list` | `[...]` | List of environment variables to explicitly remove from subprocesses (e.g., `MCP_API_KEY`). |
 

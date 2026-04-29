@@ -7,6 +7,9 @@ command: "python path/to/your/mcp_server.py"
 # command: "ssh -s user@host mcp-subsystem"
 verbose: false
 
+# Optional: Global working directory for subprocesses
+# cwd: "/path/to/project"
+
 # Optional: Add an API key for authentication
 # api_key: "your-secret-api-key"
 

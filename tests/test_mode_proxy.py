@@ -108,7 +108,7 @@ async def test_bridge_streams_stderr_content_and_exception() -> None:
 
     with patch("mcp_stdio_bridge.mode.proxy.logger") as mock_logger:
         async with anyio.create_task_group() as tg:
-            tg.start_soon(bridge_streams, mock_sse_read, mock_send_to_sse, mock_proc)
+            tg.start_soon(bridge_streams, mock_sse_read, mock_send_to_sse, mock_proc)  # type: ignore[arg-type]
             await anyio.sleep(0.2)
             tg.cancel_scope.cancel()
 
