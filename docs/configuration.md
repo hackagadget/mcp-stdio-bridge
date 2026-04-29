@@ -27,6 +27,34 @@ ExecStartPre=mcp-stdio-bridge --check-config --warnings-as-errors --config /etc/
 ExecStart=mcp-stdio-bridge --config /etc/mcp/bridge.yaml
 ```
 
+## Generating MCP Client Configuration
+
+Use `--generate-client-config` to produce a ready-to-paste JSON snippet for the MCP client of your choice:
+
+```bash
+mcp-stdio-bridge --generate-client-config claude-code --config config.yaml
+mcp-stdio-bridge --generate-client-config cursor --transport sse --host myserver --port 8000 --api-key sk-...
+```
+
+Supported clients:
+
+| Client | Config file |
+| :--- | :--- |
+| `claude-desktop` | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) |
+| `claude-code` | `~/.claude/settings.json` (global) or `.claude/settings.json` (project) |
+| `cursor` | `~/.cursor/mcp.json` |
+| `gemini` | `~/.gemini/settings.json` |
+| `vscode` | `.vscode/mcp.json` (project-local) |
+| `copilot` | VS Code user `settings.json` |
+
+The destination path and a merge note are printed to stderr; the JSON goes to stdout (or to the file specified by `--output`):
+
+```bash
+mcp-stdio-bridge --generate-client-config cursor --output ~/.cursor/mcp.json
+```
+
+> **Note**: MCP client config formats evolve independently of this tool. A warning is always printed to stderr reminding you to verify the output against your client's current documentation.
+
 ## JSON Schema
 
 The JSON schema is bundled with the package at `src/mcp_stdio_bridge/schema.json`. You can use this for validation and autocompletion in many IDEs.
@@ -104,7 +132,7 @@ Each entry in `wrapped_commands` is an object:
 | :--- | :--- | :--- |
 | `name` | `string` | **(Required)** The tool name (e.g. `"wp_cli"`). |
 | `description` | `string` | **(Required)** Description for the LLM. |
-| `command` | `string` | **(Required)** The base executable (e.g. `"/usr/local/bin/wp"`). |
+| `command` | `string` or `list` | **(Required)** The base command. A string is split by `shlex` before execution, so `"wp core"` correctly produces `["wp", "core", <args>]`. A list (e.g. `["wp", "core"]`) is used as-is. |
 | `apply` | `list` | List of group names (from top-level `groups`) to merge into this command's config. |
 | `forbidden_args` | `list` | List of blocked argument prefixes for security (denylist). |
 | `forbidden_patterns` | `list` | List of blocked regex patterns for security (denylist). |

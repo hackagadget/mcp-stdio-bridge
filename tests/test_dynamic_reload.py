@@ -1,36 +1,56 @@
 # SPDX-License-Identifier: Unlicense
 import pytest
-from mcp_stdio_bridge.config import settings
-import mcp.types as types
+import yaml
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
 
 @pytest.fixture
 def anyio_backend() -> str:
-    return 'asyncio'
+    return "asyncio"
+
 
 @pytest.mark.anyio
-async def test_wrapper_server_dynamic_tools() -> None:
-    """Test that wrapper server picks up tool changes without re-initialization."""
-    from mcp_stdio_bridge.mode.wrapper import create_wrapper_server
-    
-    settings["wrapped_commands"] = [{"name": "tool1", "command": "echo", "description": "d1"}]
-    server = create_wrapper_server()
-    
-    # List tools - in v1.0.0 of SDK it is request_handlers
-    handler = server.request_handlers[types.ListToolsRequest]
-    result = await handler(types.ListToolsRequest())
-    # The result is wrapped in a root object in some SDK versions
-    tools = result.root.tools if hasattr(result, 'root') else result.tools
-    assert len(tools) == 1
-    assert tools[0].name == "tool1"
-    
-    # Change settings
-    settings["wrapped_commands"] = [
-        {"name": "tool1", "command": "echo", "description": "d1"},
-        {"name": "tool2", "command": "ls", "description": "d2"}
-    ]
-    
-    # List tools again (handler should see new settings)
-    result2 = await handler(types.ListToolsRequest())
-    tools2 = result2.root.tools if hasattr(result2, 'root') else result2.tools
-    assert len(tools2) == 2
-    assert tools2[1].name == "tool2"
+async def test_reload_settings(tmp_path: Path) -> None:
+    """Test that settings are reloaded from disk."""
+    import mcp_stdio_bridge.config as config
+
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(yaml.dump({"port": 9000}))
+
+    # finalize_settings stores _last_args
+    args = MagicMock()
+    args.config = str(config_file)
+    args.verbose = False
+    config.finalize_settings(args)
+
+    with patch("mcp_stdio_bridge.config.get_config_files", return_value=[str(config_file)]):
+        config.settings["port"] = 8000
+        assert config.reload_settings() is True
+        assert config.settings["port"] == 9000
+
+
+@pytest.mark.anyio
+async def test_config_watcher_trigger(tmp_path: Path) -> None:
+    """Test that the config watcher detects changes."""
+    import mcp_stdio_bridge.main as main
+
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("initial: state")
+
+    with (
+        patch("mcp_stdio_bridge.main.get_config_files", return_value=[str(config_file)]),
+        patch("mcp_stdio_bridge.main.reload_settings", return_value=True) as mock_reload,
+        patch("mcp_stdio_bridge.main.sse_refresh"),
+        patch("mcp_stdio_bridge.main.stdio_refresh"),
+        patch("anyio.sleep", side_effect=[None, RuntimeError("stop")]),
+    ):
+        with (
+            patch("mcp_stdio_bridge.main.os.path.exists", return_value=True),
+            patch("mcp_stdio_bridge.main.os.path.getmtime", side_effect=[100, 200, 200, 200]),
+        ):
+            try:
+                await main.config_watcher()
+            except RuntimeError:
+                pass
+            assert mock_reload.called

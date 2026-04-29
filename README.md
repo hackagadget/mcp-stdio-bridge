@@ -127,6 +127,8 @@ docker-compose up -d
 | `--version` | Display the application version and exit | |
 | `-v`, `--verbose` | Enable verbose logging | `False` |
 | `--generate-api-key` | Print a random URL-safe API key and exit | |
+| `--generate-client-config` | Generate a JSON config snippet for an MCP client and exit (choices: `claude-desktop`, `claude-code`, `cursor`, `gemini`, `vscode`, `copilot`) | |
+| `-o`, `--output` | Write `--generate-client-config` output to FILE instead of stdout | |
 | `--check-config` | Validate configuration and exit (like `nginx -t`) | |
 | `--warnings-as-errors` | Treat config warnings as errors (use with `--check-config`) | |
 
@@ -152,6 +154,18 @@ Lint, type-check, and security scan:
 ruff check src tests
 mypy src
 bandit -r src -c pyproject.toml
+```
+
+### Standalone Integration Tests
+
+End-to-end integration tests live in `standalone_tests/`. They exercise real transport
+and subprocess paths outside the unit-test harness, including SSH and Docker scenarios.
+See [docs/deployment.md](docs/deployment.md#standalone-integration-tests) for full
+usage instructions.
+
+```bash
+# Quick local smoke test (no Docker required)
+./standalone_tests/run_tests.sh
 ```
 
 ## License

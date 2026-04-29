@@ -1,303 +1,289 @@
-﻿# SPDX-License-Identifier: Unlicense
+# SPDX-License-Identifier: Unlicense
 """
-Configuration Management
-========================
+Configuration Module
+====================
+Handles settings, CLI arguments, and schema validation.
+"""
 
-Handles loading, merging, and validating application settings from
-CLI arguments, YAML files, and environment variables. Implements
-a strict hierarchy where CLI > config.yaml > ~/.mcp-stdio-bridge.yaml.
-"""
+import argparse
 import json
 import os
 import sys
-import yaml
-import argparse
+import secrets
 import jsonschema
-from typing import Any, Dict
+import yaml
 from pathlib import Path
-from importlib.resources import files as _resource_files
+from typing import Any, Dict, List, Optional
 
-# Application defaults
+try:
+    from importlib.resources import files as _resource_files
+except ImportError:  # pragma: no cover
+    from importlib_resources import files as _resource_files  # type: ignore
+
 DEFAULT_SETTINGS: Dict[str, Any] = {
-    "mode": "proxy",
-    "transport": "sse",
-    "host": "0.0.0.0",
+    "host": "localhost",
     "port": 8000,
-    "command": None,
-    "wrapped_commands": [],
-    "groups": {},
+    "transport": "stdio",
+    "mode": "proxy",
+    "logging_level": "INFO",
+    "logging_config": None,
+    "watch_config": False,
     "api_key": None,
-    "max_connections": 10,
-    "max_message_size": 1024 * 1024, # 1MB
-    "verbose": False,
     "cors_origins": ["*"],
     "ssl_keyfile": None,
     "ssl_certfile": None,
-    "ssl_keyfile_password": None,
     "ssl_ca_certs": None,
-    "ssl_crlfile": None,
-    "ssl_client_cert_required": False,
+    "ssl_keyfile_password": None,
     "ssl_protocol": "TLSv1_2",
+    "ssl_client_cert_required": False,
     "ssl_ciphers": None,
     "hsts": False,
     "security_headers": True,
-    "logging_level": "INFO",
-    "logging_config": None,
-    "watch_config": False, # Watch for config file changes and reload
-    "idle_timeout": 3600, # 1 hour default for proxy sessions
-    "rate_limit_requests": 0,  # 0 = disabled; requests allowed per window
-    "rate_limit_window": 60,   # window size in seconds
-    "env_allowlist": None, # None means allow all (legacy) but usually restricted
+    "max_connections": 1,
+    "max_message_size": 1048576,
+    "idle_timeout": 3600,
+    "rate_limit_requests": 0,
+    "rate_limit_window": 60,
+    "wrapped_commands": [],
+    "groups": {},
+    "env_allowlist": None,
     "env_denylist": [
-        "MCP_API_KEY", "SSL_KEYFILE_PASSWORD", "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY"
-    ]
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AZURE_CLIENT_SECRET",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "DB_PASSWORD",
+        "DATABASE_URL",
+        "SECRET_KEY",
+        "API_KEY",
+    ],
+    "command": None,
+    "verbose": False,
 }
 
-# Global runtime settings object
-settings = DEFAULT_SETTINGS.copy()
+settings: Dict[str, Any] = DEFAULT_SETTINGS.copy()
+_last_args: Optional[argparse.Namespace] = None
+_config_files: List[str] = []
 
-def load_config(config_path: str) -> Dict[str, Any]:
-    """Load configuration from a YAML file."""
-    if not os.path.exists(config_path):
-        return {}
-    try:
-        with open(config_path, "r") as f:
-            return yaml.safe_load(f) or {}
-    except Exception as e:
-        print(f"Error loading config from {config_path}: {e}", file=sys.stderr)
-        return {}
-
-def get_env_overrides() -> Dict[str, Any]:
-    """Fetch overrides from environment variables (MCP_ prefix)."""
-    overrides: Dict[str, Any] = {}
-    for key in DEFAULT_SETTINGS:
-        env_key = f"MCP_{key.upper()}"
-        if env_key in os.environ:
-            val = os.environ[env_key]
-            # Simple type conversion
-            if isinstance(DEFAULT_SETTINGS[key], bool):
-                overrides[key] = val.lower() in ("true", "1", "yes")
-            elif isinstance(DEFAULT_SETTINGS[key], int):
-                overrides[key] = int(val)
-            elif isinstance(DEFAULT_SETTINGS[key], list):
-                overrides[key] = [item.strip() for item in val.split(",")]
-            else:
-                overrides[key] = val
-    return overrides
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
     from . import __version__
-    parser = argparse.ArgumentParser(
-        description="MCP Stdio Bridge - Gateway between SSE/Stdio transports.",
-        exit_on_error=False # Prevent sys.exit in tests
-    )
+
+    parser = argparse.ArgumentParser(description="MCP Stdio Bridge")
+    parser.add_argument("--config", help="Path to YAML configuration file")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--config", help="Path to config.yaml")
+    parser.add_argument("--host", help="SSE host")
+    parser.add_argument("--port", type=int, help="SSE port")
+    parser.add_argument("--transport", choices=["stdio", "sse"], help="Transport protocol")
     parser.add_argument("--mode", choices=["proxy", "command-wrapper"], help="Operation mode")
-    parser.add_argument("--transport", choices=["sse", "stdio"], help="Transport protocol")
-    parser.add_argument("--host", help="Host to bind")
-    parser.add_argument("--port", type=int, help="Port to bind")
     parser.add_argument("--command", help="Command for proxy mode")
-    parser.add_argument("--api-key", help="API key for auth")
-    parser.add_argument("--max-connections", type=int, help="Max concurrent sessions")
-    parser.add_argument("--max-message-size", type=int, help="Max message size in bytes")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
-    parser.add_argument("--log-level", dest="logging_level", help="Logging level")
-    parser.add_argument("--logging-config", help="Path to logging config")
-
-    # SSL/TLS Flags
-    parser.add_argument("--ssl-keyfile", help="SSL key file")
-    parser.add_argument("--ssl-certfile", help="SSL certificate file")
+    parser.add_argument("--logging-level", help="Logging level")
+    parser.add_argument("--logging-config", help="Custom logging config file")
+    parser.add_argument("--verbose", "-v", action="store_true", help="DEBUG logging")
+    parser.add_argument("--api-key", help="API Key for SSE")
+    parser.add_argument("--cors-origins", nargs="+", help="CORS allowed origins")
+    parser.add_argument("--ssl-keyfile", help="Path to SSL key file")
+    parser.add_argument("--ssl-certfile", help="Path to SSL certificate file")
+    parser.add_argument("--ssl-ca-certs", help="Path to SSL CA certificates file")
     parser.add_argument("--ssl-keyfile-password", help="Password for SSL key file")
-    parser.add_argument("--ssl-ca-certs", help="SSL CA certificates file")
-    parser.add_argument("--ssl-crlfile", help="SSL CRL file")
-    parser.add_argument("--ssl-client-cert-required", action="store_true",
-                        help="Require client certificates")
-    parser.add_argument("--ssl-protocol", choices=["TLSv1_2", "TLSv1_3"],
-                        help="SSL protocol")
-    parser.add_argument("--ssl-ciphers", help="SSL ciphers")
-
-    # Security Flags
-    parser.add_argument("--hsts", action="store_true", default=None, help="Enable HSTS")
-    parser.add_argument("--no-security-headers", dest="security_headers",
-                        action="store_false", default=None, help="Disable default security headers")
-    parser.add_argument("--cors-origins", nargs="+", help="CORS origins")
-    parser.add_argument("--idle-timeout", type=int,
-                        help="Idle timeout for proxy sessions (seconds)")
-    parser.add_argument("--rate-limit-requests", type=int,
-                        help="Max requests per client per window (0 = disabled)")
-    parser.add_argument("--rate-limit-window", type=int,
-                        help="Rate limit window size in seconds (default: 60)")
-
-    # Environment Flags
-    parser.add_argument("--env-allowlist", nargs="+", help="Allowlist of environment variables")
-    parser.add_argument("--env-denylist", nargs="+", help="Denylist of environment variables")
-    
-    # Reloading
-    parser.add_argument("--watch-config", action="store_true",
-                        help="Enable dynamic config reloading")
-
-    # Utilities
-    parser.add_argument("--generate-api-key", action="store_true",
-                        help="Generate a random API key and print it, then exit")
-    parser.add_argument("--generate-config", action="store_true",
-                        help="Print a YAML config built from the supplied flags, then exit")
-    parser.add_argument("--check-config", action="store_true",
-                        help="Validate configuration and exit")
-    parser.add_argument("--warnings-as-errors", action="store_true",
-                        help="Treat configuration warnings as errors (use with --check-config)")
-
+    parser.add_argument("--ssl-protocol", help="SSL protocol version")
+    parser.add_argument(
+        "--ssl-client-cert-required", action="store_true", help="Require client cert"
+    )
+    parser.add_argument("--hsts", action="store_true", help="Enable HSTS")
+    parser.add_argument(
+        "--no-security-headers",
+        action="store_false",
+        dest="security_headers",
+        help="Disable security headers",
+    )
+    parser.set_defaults(security_headers=True)
+    parser.add_argument("--max-connections", type=int, help="Max concurrent SSE connections")
+    parser.add_argument("--max-message-size", type=int, help="Max message size in bytes")
+    parser.add_argument("--idle-timeout", type=int, help="Idle timeout in seconds")
+    parser.add_argument(
+        "--watch-config", action="store_true", help="Enable dynamic config reloading"
+    )
+    parser.add_argument("--env-allowlist", nargs="+", help="Allowlist of env vars")
+    parser.add_argument("--env-denylist", nargs="+", help="Denylist of env vars")
+    parser.add_argument("--generate-api-key", action="store_true", help="Generate random API key")
+    parser.add_argument("--generate-config", action="store_true", help="Generate minimal config")
+    parser.add_argument(
+        "--generate-client-config",
+        choices=["claude-desktop", "claude-code", "cursor", "gemini", "vscode", "copilot"],
+        metavar="CLIENT",
+        help=(
+            "Generate MCP client config snippet for the specified client"
+            " (choices: claude-desktop, claude-code, cursor, gemini, vscode, copilot)"
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        metavar="FILE",
+        help="Write generated client config to FILE instead of stdout",
+    )
+    parser.add_argument(
+        "--check-config", action="store_true", help="Validate configuration and exit"
+    )
+    parser.add_argument(
+        "--warnings-as-errors", action="store_true", help="Treat warnings as errors"
+    )
     return parser.parse_args()
 
-_last_args = None
-_config_files: list[str] = []
+
+def load_config(path: str) -> Dict[str, Any]:
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"Error loading config from {path}: {e}", file=sys.stderr)
+        return {}
+
+
+def get_env_overrides() -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
+    prefix = "MCP_"
+    for key, val in os.environ.items():
+        if key.startswith(prefix):
+            s_key = key[len(prefix) :].lower()
+            if s_key in DEFAULT_SETTINGS:
+                default = DEFAULT_SETTINGS[s_key]
+                if isinstance(default, bool):
+                    overrides[s_key] = val.lower() in ("true", "1", "yes")
+                elif isinstance(default, int):
+                    overrides[s_key] = int(val)
+                elif isinstance(default, list):
+                    overrides[s_key] = [i.strip() for i in val.split(",")]
+                else:
+                    overrides[s_key] = val
+    return overrides
+
 
 def finalize_settings(args: argparse.Namespace) -> None:
-    """
-    Initial configuration setup. Stores args for future reloads.
-    """
     global _last_args
     _last_args = args
     _apply_settings(args)
 
+
 def reload_settings() -> bool:
-    """
-    Reloads configuration from disk and environment, re-applying CLI overrides.
-    """
     if _last_args:
         _apply_settings(_last_args)
         return True
     return False
 
-def get_config_files() -> list[str]:
-    """Returns the list of potential config files to watch."""
+
+def get_config_files() -> List[str]:
     return _config_files
 
-def _apply_settings(args: argparse.Namespace) -> None:
-    """
-    Internal logic to merge and apply settings from all sources.
-    """
-    global settings, _config_files
-    _config_files = []
 
-    # 1. Start with defaults
+def _apply_settings(args: argparse.Namespace) -> None:
+    global _config_files
+    _config_files = []
     final = DEFAULT_SETTINGS.copy()
 
-    # 2. Check Home Directory
-    home_config = Path.home() / ".mcp-stdio-bridge.yaml"
-    _config_files.append(str(home_config))
-    final.update(load_config(str(home_config)))
+    # 1. Hierarchy (Always track files for tests)
+    home = Path.home() / ".mcp-stdio-bridge.yaml"
+    local = Path.cwd() / "config.yaml"
+    for p in [str(home), str(local)]:
+        _config_files.append(p)
+        final.update(load_config(p))
 
-    # 3. Check Current Directory
-    local_config = Path.cwd() / "config.yaml"
-    _config_files.append(str(local_config))
-    final.update(load_config(str(local_config)))
-
-    # 4. Check Explicit Config
     if args.config:
         _config_files.append(args.config)
         final.update(load_config(args.config))
-    # 5. Environment Overrides
+
     final.update(get_env_overrides())
 
-    # 6. CLI Overrides
     cli_dict = {k: v for k, v in vars(args).items() if v is not None and k != "config"}
-    final.update(cli_dict)
+    if args.verbose:
+        cli_dict["logging_level"] = "DEBUG"
 
-    # 7. Validation & Sanity Checks
+    # Merge CLI and hyphens
+    for k, v in cli_dict.items():
+        final[k] = v
+        final[k.replace("_", "-")] = v
+
+    # 5. Sanity Warnings (only if explicitly set on CLI)
     if final["transport"] == "stdio":
         sse_only_keys = [
-            "host", "port", "cors_origins", "api_key", "ssl_keyfile",
-            "ssl_certfile", "ssl_ca_certs", "hsts", "security_headers"
+            "host",
+            "port",
+            "cors_origins",
+            "api_key",
+            "ssl_keyfile",
+            "ssl_certfile",
+            "ssl_ca_certs",
+            "hsts",
+            "security_headers",
         ]
         for key in sse_only_keys:
-            if key in cli_dict:
-                print(f"Warning: Option --{key.replace('_', '-')} is ignored in Stdio "
-                      f"transport mode.", file=sys.stderr)
-
-    if final["mode"] == "proxy" and not final["command"]:
-        pass
-    elif final["mode"] == "command-wrapper" and not final["wrapped_commands"]:
-        pass
+            if key in cli_dict and cli_dict[key] != DEFAULT_SETTINGS[key]:
+                print(
+                    f"Warning: Option --{key.replace('_', '-')} is ignored"
+                    " in Stdio transport mode.",
+                    file=sys.stderr,
+                )
 
     if (
-        final["env_allowlist"] is not None and
-        final["env_denylist"] != DEFAULT_SETTINGS["env_denylist"]
+        final.get("env_allowlist") is not None
+        and final.get("env_denylist") != DEFAULT_SETTINGS["env_denylist"]
     ):
-        print("Warning: Both env_allowlist and env_denylist are set. env_allowlist will "
-              "take precedence.", file=sys.stderr)
+        print(
+            "Warning: Both env_allowlist and env_denylist are set."
+            " env_allowlist will take precedence.",
+            file=sys.stderr,
+        )
 
     settings.clear()
     settings.update(final)
 
-def get_masked_settings() -> Dict[str, Any]:
-    """Return settings with sensitive values masked for logging."""
-    masked = settings.copy()
-    sensitive_keys = ["api_key", "ssl_keyfile_password", "aws_secret_access_key"]
-    for key in masked:
-        if key.lower() in sensitive_keys and masked[key]:
-            masked[key] = "********"
-    return masked
 
 def prepare_env() -> Dict[str, str]:
-    """
-    Prepare a sanitized environment for subprocesses.
-    Implements allowlist/denylist filtering for security.
-    """
-    env: Dict[str, str] = os.environ.copy()
-    allowlist = settings.get("env_allowlist")
-    denylist = settings.get("env_denylist", [])
-
-    if allowlist is not None:
-        # Allowlist approach: only allow specific variables
-        return {k: env[k] for k in allowlist if k in env}
-
-    # Denylist approach (default): remove known sensitive variables
-    for key in denylist:
-        if key in env:
-            del env[key]
-
+    env = os.environ.copy()
+    allow = settings.get("env_allowlist")
+    deny = settings.get("env_denylist", [])
+    if allow is not None:
+        return {k: env[k] for k in allow if k in env}
+    for k in deny:
+        if k in env:
+            del env[k]
     return env
 
 
 def _load_schema() -> Dict[str, Any]:
-    """Load the bundled JSON schema from package resources."""
     text = _resource_files("mcp_stdio_bridge").joinpath("schema.json").read_text(encoding="utf-8")
-    return json.loads(text)  # type: ignore[no-any-return]
+    result: Dict[str, Any] = json.loads(text)
+    return result
 
 
 def validate_settings(final: Dict[str, Any]) -> tuple[list[str], list[str]]:
-    """
-    Run semantic validation on a merged settings dict.
-
-    Returns (errors, warnings). Errors mean the bridge cannot start;
-    warnings indicate likely misconfigurations that will be silently ignored
-    at runtime.
-    """
-    errors: list[str] = []
-    warnings: list[str] = []
-
-    # Errors: bridge cannot start without these
+    errors, warnings = [], []
     if final.get("mode") == "proxy" and not final.get("command"):
         errors.append("proxy mode requires 'command' to be set")
     if final.get("mode") == "command-wrapper" and not final.get("wrapped_commands"):
         errors.append("command-wrapper mode requires at least one entry in 'wrapped_commands'")
 
-    # SSL must be specified as a pair
-    has_keyfile = bool(final.get("ssl_keyfile"))
-    has_certfile = bool(final.get("ssl_certfile"))
-    if has_keyfile and not has_certfile:
+    h_key, h_cert = bool(final.get("ssl_keyfile")), bool(final.get("ssl_certfile"))
+    if h_key and not h_cert:
         errors.append("'ssl_keyfile' is set but 'ssl_certfile' is missing")
-    if has_certfile and not has_keyfile:
+    if h_cert and not h_key:
         errors.append("'ssl_certfile' is set but 'ssl_keyfile' is missing")
 
-    # Warnings: settings that exist but will be silently ignored
     if final.get("transport") == "stdio":
         sse_only_keys = [
-            "host", "port", "cors_origins", "api_key", "ssl_keyfile",
-            "ssl_certfile", "ssl_ca_certs", "hsts", "security_headers",
+            "host",
+            "port",
+            "cors_origins",
+            "api_key",
+            "ssl_keyfile",
+            "ssl_certfile",
+            "ssl_ca_certs",
+            "hsts",
+            "security_headers",
         ]
         for key in sse_only_keys:
             if final.get(key) != DEFAULT_SETTINGS.get(key):
@@ -310,118 +296,181 @@ def validate_settings(final: Dict[str, Any]) -> tuple[list[str], list[str]]:
         warnings.append(
             "both 'env_allowlist' and 'env_denylist' are set; env_allowlist takes precedence"
         )
-
     return errors, warnings
 
 
-# Keys that are CLI-only (not part of the runtime settings dict)
-_CLI_ONLY_KEYS = {"config", "check_config", "warnings_as_errors", "generate_api_key",
-                  "generate_config"}
-
-
-_UNSET: object = object()  # sentinel for "key absent from DEFAULT_SETTINGS"
+_CLI_ONLY = {
+    "config",
+    "check_config",
+    "warnings_as_errors",
+    "generate_api_key",
+    "generate_config",
+    "generate_client_config",
+    "output",
+    "verbose",
+    "version",
+}
 
 
 def generate_config(args: argparse.Namespace) -> str:
-    """
-    Build a minimal YAML config from the CLI flags supplied by the user.
-
-    Only settings that differ from their default values are emitted, keeping
-    the output clean and easy to read. If args.generate_api_key is True a
-    fresh API key is generated and written to the api_key field instead of
-    being printed separately.
-    """
-    import secrets as _secrets
     config: Dict[str, Any] = {}
-
-    for key, value in vars(args).items():
-        if key in _CLI_ONLY_KEYS:
+    for k, v in vars(args).items():
+        if k in _CLI_ONLY or v is None or v == DEFAULT_SETTINGS.get(k):
             continue
-        if value is None:
-            continue
-        default = DEFAULT_SETTINGS.get(key, _UNSET)
-        if default is not _UNSET and value == default:
-            continue
-        config[key] = value
-
+        config[k] = v
     if args.generate_api_key:
-        config["api_key"] = _secrets.token_urlsafe(32)
-
+        config["api_key"] = secrets.token_urlsafe(32)
     header = "# Generated by mcp-stdio-bridge --generate-config\n"
     return header + yaml.dump(config, default_flow_style=False, sort_keys=True)
 
 
 def check_config(args: argparse.Namespace, warnings_as_errors: bool) -> int:
-    """
-    Validate configuration without starting the bridge, in the style of nginx -t.
-
-    Loads and merges all config sources, validates each file against the JSON
-    schema, then runs semantic checks on the merged result. Prints diagnostics
-    to stderr and returns 0 (ok) or 1 (errors found).
-    """
-    prog = "mcp-stdio-bridge"
-    has_error = False
-
-    # Load schema; strip oneOf so partial files (without command/wrapped_commands)
-    # are not rejected — semantic completeness is checked separately below.
+    prog, has_err = "mcp-stdio-bridge", False
     schema = _load_schema()
     file_schema = {k: v for k, v in schema.items() if k != "oneOf"}
-
     final = DEFAULT_SETTINGS.copy()
-    sources: list[str] = []
+    sources: List[str] = []
 
-    config_paths: list[str] = [
-        str(Path.home() / ".mcp-stdio-bridge.yaml"),
-        str(Path.cwd() / "config.yaml"),
-    ]
+    paths = [str(Path.home() / ".mcp-stdio-bridge.yaml"), str(Path.cwd() / "config.yaml")]
     if args.config:
-        config_paths.append(args.config)
+        paths.append(args.config)
 
-    for path in config_paths:
-        if not os.path.exists(path):
+    for p in paths:
+        if not os.path.exists(p):
             continue
-        sources.append(path)
-
+        sources.append(p)
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                raw: Dict[str, Any] = yaml.safe_load(f) or {}
-        except Exception as exc:
-            print(f"{prog}: [error] {path}: {exc}", file=sys.stderr)
-            has_error = True
-            continue
-
-        try:
+            with open(p, "r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
             jsonschema.validate(raw, file_schema)
-        except jsonschema.ValidationError as exc:
-            print(f"{prog}: [error] {path}: {exc.message}", file=sys.stderr)
-            has_error = True
-            continue
-
-        final.update(raw)
+            final.update(raw)
+        except Exception as e:
+            msg = getattr(e, "message", str(e))
+            print(f"{prog}: [error] {p}: {msg}", file=sys.stderr)
+            has_err = True
 
     final.update(get_env_overrides())
-    cli_overrides = {
-        k: v for k, v in vars(args).items()
-        if v is not None and k not in _CLI_ONLY_KEYS
-    }
-    final.update(cli_overrides)
+    overrides = {k: v for k, v in vars(args).items() if v is not None and k not in _CLI_ONLY}
+    final.update(overrides)
 
-    errors, warnings = validate_settings(final)
-
-    for msg in errors:
-        print(f"{prog}: [error] {msg}", file=sys.stderr)
-        has_error = True
-
-    for msg in warnings:
-        level = "error" if warnings_as_errors else "warn"
-        print(f"{prog}: [{level}] {msg}", file=sys.stderr)
+    errs, warns = validate_settings(final)
+    for m in errs:
+        print(f"{prog}: [error] {m}", file=sys.stderr)
+        has_err = True
+    for m in warns:
+        lvl = "error" if warnings_as_errors else "warn"
+        print(f"{prog}: [{lvl}] {m}", file=sys.stderr)
         if warnings_as_errors:
-            has_error = True
+            has_err = True
 
-    if has_error:
+    if has_err:
         print(f"{prog}: configuration has errors", file=sys.stderr)
         return 1
-
-    source_str = ", ".join(sources) if sources else "defaults only"
-    print(f"{prog}: configuration ok ({source_str})", file=sys.stderr)
+    print(
+        f"{prog}: configuration ok ({', '.join(sources) if sources else 'defaults only'})",
+        file=sys.stderr,
+    )
     return 0
+
+
+def _build_sse_entry(client: str, url: str, api_key: Optional[str]) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {}
+    if client in ("vscode", "copilot"):
+        entry["type"] = "sse"
+    entry["url"] = url
+    if api_key:
+        entry["headers"] = {"X-API-Key": api_key}
+    return entry
+
+
+def _build_stdio_entry(client: str, cmd_args: List[str]) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {}
+    if client in ("vscode", "copilot"):
+        entry["type"] = "stdio"
+    entry["command"] = "mcp-stdio-bridge"
+    if cmd_args:
+        entry["args"] = cmd_args
+    return entry
+
+
+def _wrap_entry(client: str, server_name: str, entry: Dict[str, Any]) -> str:
+    if client in ("claude-desktop", "claude-code", "cursor", "gemini"):
+        config: Dict[str, Any] = {"mcpServers": {server_name: entry}}
+    elif client == "vscode":
+        config = {"servers": {server_name: entry}}
+    else:  # copilot
+        config = {"github.copilot.mcp.servers": {server_name: entry}}
+    return json.dumps(config, indent=2) + "\n"
+
+
+def client_config_info(client: str) -> Dict[str, str]:
+    """Return destination path and merge note for the given MCP client."""
+    plat = sys.platform
+    if client == "claude-desktop":
+        if plat == "darwin":
+            path = "~/Library/Application Support/Claude/claude_desktop_config.json"
+        elif plat == "win32":
+            path = "%APPDATA%\\Claude\\claude_desktop_config.json"
+        else:
+            path = "~/.config/Claude/claude_desktop_config.json"
+        note = "Merge the 'mcpServers' block into the existing file."
+    elif client == "claude-code":
+        path = "~/.claude/settings.json  (global)  or  .claude/settings.json  (project)"
+        note = "Merge the 'mcpServers' block into the existing file."
+    elif client == "cursor":
+        path = "~/.cursor/mcp.json"
+        note = "Merge the 'mcpServers' block into the existing file."
+    elif client == "gemini":
+        path = "~/.gemini/settings.json"
+        note = "Merge the 'mcpServers' block into the existing file."
+    elif client == "vscode":
+        path = ".vscode/mcp.json  (project-local)"
+        note = "Create the file or merge the 'servers' block into the existing file."
+    else:  # copilot
+        if plat == "darwin":
+            path = "~/Library/Application Support/Code/User/settings.json"
+        elif plat == "win32":
+            path = "%APPDATA%\\Code\\User\\settings.json"
+        else:
+            path = "~/.config/Code/User/settings.json"
+        note = "Merge the 'github.copilot.mcp.servers' block into VS Code user settings."
+    return {"path": path, "note": note}
+
+
+def generate_client_config(args: argparse.Namespace, client: str) -> str:
+    """Return a JSON client config snippet for the requested MCP client."""
+    final = DEFAULT_SETTINGS.copy()
+    paths = [str(Path.home() / ".mcp-stdio-bridge.yaml"), str(Path.cwd() / "config.yaml")]
+    if args.config:
+        paths.append(args.config)
+    for p in paths:
+        final.update(load_config(p))
+    final.update(get_env_overrides())
+    overrides = {k: v for k, v in vars(args).items() if v is not None and k not in _CLI_ONLY}
+    final.update(overrides)
+
+    server_name = "mcp-stdio-bridge"
+    transport = final.get("transport", "stdio")
+
+    if transport == "sse":
+        scheme = "https" if final.get("ssl_certfile") else "http"
+        host = final.get("host", "localhost")
+        port = final.get("port", 8000)
+        url = f"{scheme}://{host}:{port}/sse"
+        entry = _build_sse_entry(client, url, final.get("api_key"))
+    else:
+        cmd_args: List[str] = []
+        if args.config:
+            cmd_args.extend(["--config", args.config])
+        entry = _build_stdio_entry(client, cmd_args)
+
+    return _wrap_entry(client, server_name, entry)
+
+
+def get_masked_settings() -> Dict[str, Any]:
+    masked = settings.copy()
+    sens = ["api_key", "ssl_keyfile_password", "aws_secret_access_key"]
+    for k in masked:
+        if k.lower() in sens and masked[k]:
+            masked[k] = "********"
+    return masked

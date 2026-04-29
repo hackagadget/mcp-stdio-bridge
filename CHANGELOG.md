@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-28
+
 ### Added
 
 - **API Key Generator**: Added `--generate-api-key` CLI flag that prints a cryptographically
@@ -24,14 +26,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built from the supplied CLI flags (only settings that differ from their defaults are
   emitted). When combined with `--generate-api-key`, the generated key is embedded in the
   `api_key` field of the output instead of being printed separately.
+- **Client Config Generator**: Added `--generate-client-config CLIENT` flag that produces
+  a ready-to-paste JSON snippet for a target MCP client (`claude-desktop`, `claude-code`,
+  `cursor`, `gemini`, `vscode`, `copilot`). The snippet is tailored to the resolved
+  transport — stdio transport yields a `command`/`args` entry; SSE transport yields a `url`
+  and optional `X-API-Key` headers block. The client's conventional config file path and a
+  merge note are printed to stderr alongside a format-stability warning.
+- **Output Flag**: Added `--output FILE` / `-o FILE` flag to write `--generate-client-config`
+  output directly to a file (the resolved absolute path is echoed to stderr) instead of
+  stdout.
+- **Standalone Integration Tests**: Added a suite of end-to-end integration tests in
+  `standalone_tests/` for validating SSH, Docker, and various transport scenarios.
+
+### Changed
+
+- **SSE Transport Refactoring**: Refactored the SSE transport implementation into separate
+  proxy and wrapper modules (`sse_proxy.py` and `sse_wrapper.py`) for better maintainability
+  and clearer separation of concerns.
+- **ASGI Middleware**: Converted `APIKeyMiddleware`, `SecurityHeadersMiddleware`, and
+  `RateLimitMiddleware` from Starlette `BaseHTTPMiddleware` to pure ASGI middleware. This
+  improves reliability and eliminates potential stream-interruption issues when using
+  SSE transport.
 
 ### Fixed
 
+- **Expanded Environment Scrubbing**: The default `env_denylist` now includes a much broader
+  range of sensitive variables, including `AWS_SESSION_TOKEN`, `AZURE_CLIENT_SECRET`,
+  `GOOGLE_APPLICATION_CREDENTIALS`, `DB_PASSWORD`, and `DATABASE_URL`.
+- **Wrapper Command String Splitting**: `command` values containing spaces (e.g.
+  `"wp core"`) are now split via `shlex.split` before being passed to the subprocess,
+  producing `["wp", "core", <args>]` instead of `["wp core", <args>]`. The latter caused
+  `FileNotFoundError` on Linux because no executable named `"wp core"` (with a space)
+  exists on `PATH`. The list form (`command: ["wp", "core"]`) continues to work as before.
 - **Clean Shutdown on Windows**: `Ctrl+C` no longer prints an `ExceptionGroup` traceback when
   using SSE transport. Uvicorn handles the first `SIGINT` itself and re-raises it via
   `signal.raise_signal()` after cleanup, which caused a `KeyboardInterrupt` to surface inside
   the anyio task group and get wrapped in a `BaseExceptionGroup`. The top-level exception
   handler now suppresses groups composed entirely of `KeyboardInterrupt`.
+- **Windows Compatibility Fix**: Added a workaround for `rich.box` encoding crashes on
+  certain Windows terminal environments by mocking the module if it fails to load safely.
+- **Improved Stdio Reliability**: Enabled line-buffering on `sys.stdout` to ensure prompt
+  delivery of JSON-RPC messages and added detailed traceback reporting for fatal start-up
+  errors.
+
+### Documentation
+
+- **MCP Client Configuration**: Added comprehensive documentation in `docs/configuration.md` for
+  generating and using client-specific configuration snippets.
+- **WP-CLI Example**: Greatly expanded `examples/wp-cli-wrapper.yaml` with a production-ready
+  suite of WordPress management tools, including security groups and granular argument
+  filtering.
+- **Deployment & Integration**: Added detailed instructions for the new standalone integration
+  test suite in `docs/deployment.md`.
 
 ## [1.2.2] - 2026-04-26
 
@@ -153,6 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker support** — `Dockerfile` and `docker-compose.yaml` included.
 - **100% test coverage** across all modules.
 
+[1.3.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.3.0
 [1.2.2]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.2
 [1.2.1.post1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.1.post1
 [1.2.1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.1

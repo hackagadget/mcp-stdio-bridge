@@ -105,6 +105,77 @@ server {
 }
 ```
 
+## Standalone Integration Tests
+
+The `standalone_tests/` directory contains an integration test suite that exercises
+the bridge end-to-end — real subprocesses, real transport, real WP-CLI mock — outside
+of the unit-test harness.
+
+### Running the tests
+
+**Linux / macOS:**
+
+```bash
+./standalone_tests/run_tests.sh [-t <scenario>] [options]
+```
+
+**Windows (PowerShell):**
+
+```powershell
+.\standalone_tests\run_tests.ps1 [-t <scenario>] [options]
+```
+
+Run with `-h` for a full option listing, or `-t <scenario> -h` for help on a specific
+scenario.
+
+### Scenarios
+
+| Scenario | Requires Docker | Description |
+| :--- | :---: | :--- |
+| `local-mock` | No | Runs the stdio command-wrapper against `mock_wp.py` (a WP-CLI stub) entirely in-process. The default scenario — no external services needed. |
+| `start-bridge-sse` | No | Generates a config file and starts a local SSE bridge on port 8000. Run in one terminal, then run `test-sse` in another. |
+| `test-sse` | No | Sends MCP requests to a running local bridge. Options: `-u <url>` (default `http://localhost:8000`), `-k <api-key>`. |
+| `ssh` | No | Connects to a real remote host via SSH and runs the bridge over stdio. Options: `-H <user@host>`, `-c <remote-config-path>`, `-s <extra-ssh-args>`. |
+| `docker-local` | Yes | Runs the `local-mock` scenario inside a Docker container. |
+| `docker-sse` | Yes | Brings up a bridge service and a client container; verifies the full SSE pipeline. |
+| `docker-ssh-direct` | Yes | Starts an SSH server container and runs a direct SSH stdio test against it. |
+| `docker-ssh-proxy` | Yes | Starts an SSH server, a bridge that connects via SSH, and a client; tests the SSE-over-SSH-proxy topology. |
+
+### Quick start (local, no Docker)
+
+```bash
+# 1. Run the local mock test (default scenario)
+./standalone_tests/run_tests.sh
+
+# 2. Two-terminal SSE smoke test
+#    Terminal 1:
+./standalone_tests/run_tests.sh -t start-bridge-sse
+#    Terminal 2:
+./standalone_tests/run_tests.sh -t test-sse
+#    With auth:
+./standalone_tests/run_tests.sh -t test-sse -u http://localhost:8000 -k mysecretkey
+
+# 3. Real remote host over SSH
+./standalone_tests/run_tests.sh -t ssh -H user@my-server -c /etc/mcp/config.yaml
+```
+
+### Docker scenarios
+
+All Docker scenarios require Docker with Compose v2 (`docker compose`). They bring
+up and tear down containers automatically, including cleanup on exit:
+
+```bash
+./standalone_tests/run_tests.sh -t docker-local
+./standalone_tests/run_tests.sh -t docker-sse
+./standalone_tests/run_tests.sh -t docker-ssh-direct
+./standalone_tests/run_tests.sh -t docker-ssh-proxy
+```
+
+The `docker-ssh-proxy` scenario performs a full no-cache rebuild to ensure a clean
+image; this is intentional and will take longer than the other Docker scenarios.
+
+---
+
 ## Security Checklist
 
 1.  **API Key**: Always use an `api_key` in production.

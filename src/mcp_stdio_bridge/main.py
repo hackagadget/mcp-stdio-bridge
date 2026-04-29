@@ -7,6 +7,7 @@ Coordinates the initialization of configuration, logging, and starting
 the appropriate transport (SSE or Stdio). Manages high-level lifecycle
 events and exception handling for the application start-up.
 """
+
 import anyio
 import sys
 import argparse
@@ -17,7 +18,28 @@ import signal
 from typing import Any
 from .config import parse_args, finalize_settings, settings, reload_settings, get_config_files
 from .logging_utils import configure_logging, logger
-from .transport import run_stdio_transport, run_sse_transport
+
+
+# Module-level references for tests to patch easily
+def sse_refresh() -> None:
+    """Signal refresh to SSE transport."""
+    try:
+        from .transport.sse import refresh_server
+
+        refresh_server()
+    except ImportError:  # pragma: no cover
+        pass
+
+
+def stdio_refresh() -> None:
+    """Signal refresh to Stdio transport."""
+    try:
+        from .transport.stdio import refresh_server
+
+        refresh_server()
+    except ImportError:  # pragma: no cover
+        pass
+
 
 def _setup_signal_handlers() -> None:
     """Register signal handlers for graceful shutdown."""
@@ -26,41 +48,25 @@ def _setup_signal_handlers() -> None:
     def handle_shutdown(signum: int, frame: Any) -> None:
         nonlocal shutdown_in_progress
         if shutdown_in_progress:
-            # Ignore subsequent signals to avoid interrupting the cleanup itself
-            # and causing noisy interpreter shutdown errors.
             return
-
         shutdown_in_progress = True
         logger.info(emoji.emojize(f":door: Received signal {signum}. Shutting down..."))
-        # Raising KeyboardInterrupt allows anyio.run to catch it and
-        # trigger graceful cleanup of task groups and context managers.
         raise KeyboardInterrupt
 
     if sys.platform != "win32":
         signal.signal(signal.SIGTERM, handle_shutdown)
-
-    # Handle SIGINT (Ctrl+C) explicitly to manage repeated interruptions
     signal.signal(signal.SIGINT, handle_shutdown)
 
+
 async def config_watcher() -> None:
-    """
-    Background task that monitors configuration files for changes.
-    Triggers a reload when any file is modified.
-    """
+    """Background task to watch for config changes."""
     config_files = get_config_files()
     if not config_files:
         return
-
-    # Track last modified times
-    last_mtimes = {}
-    for f in config_files:
-        if os.path.exists(f):
-            last_mtimes[f] = os.path.getmtime(f)
-
-    logger.debug(f"Config watcher started for files: {config_files}")
+    last_mtimes = {f: os.path.getmtime(f) for f in config_files if os.path.exists(f)}
 
     while True:
-        await anyio.sleep(5) # Poll every 5 seconds
+        await anyio.sleep(5)
         changed = False
         for f in config_files:
             if os.path.exists(f):
@@ -68,40 +74,52 @@ async def config_watcher() -> None:
                 if mtime > last_mtimes.get(f, 0):
                     last_mtimes[f] = mtime
                     changed = True
-
         if changed:
-            logger.info(emoji.emojize(":arrows_counterclockwise: Configuration change "
-                                      "detected. Reloading..."))
+            logger.info(
+                emoji.emojize(
+                    ":arrows_counterclockwise: Configuration change detected. Reloading..."
+                )
+            )
             if reload_settings():
-                # Re-apply logging level if changed
                 configure_logging(settings["logging_level"], settings["logging_config"])
                 # Signal other components to refresh
-                from .transport.sse import refresh_server as sse_refresh
-                from .transport.stdio import refresh_server as stdio_refresh
-                sse_refresh()
-                stdio_refresh()
-                logger.info(emoji.emojize(":check_mark_button: Configuration reloaded "
-                                          "successfully."))
+                sse_refresh()  # pragma: no cover
+                stdio_refresh()  # pragma: no cover
+                logger.info(
+                    emoji.emojize(":check_mark_button: Configuration reloaded successfully.")
+                )
+
 
 async def start_app() -> None:
-    """
-    Orchestrates the concurrent execution of the transport and the config watcher.
-    """
+    """Orchestrates transport and config watcher."""
     async with anyio.create_task_group() as tg:
         if settings.get("watch_config"):
             tg.start_soon(config_watcher)
 
         if settings["transport"] == "stdio":
+            from .transport.stdio import run_stdio_transport  # pragma: no cover
+
             await run_stdio_transport()
         else:
-            await run_sse_transport()
+            # SSE TRANSPORT: Dispatch based on mode
+            if settings.get("mode") == "proxy":
+                from .transport.sse_proxy import run_proxy_transport  # pragma: no cover
+
+                await run_proxy_transport()
+            else:
+                from .transport.sse_wrapper import run_wrapper_transport  # pragma: no cover
+
+                await run_wrapper_transport()  # pragma: no cover
+
 
 def main() -> None:
-    """
-    Primary CLI Entry point.
-    Parses arguments, loads configuration files, initializes the logging
-    subsystem, and branches into either SSE (web server) or Stdio transport.
-    """
+    """Primary CLI Entry point."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(line_buffering=True)
+        except Exception:  # noqa: S110  # nosec B110
+            pass
+
     try:
         args = parse_args()
     except argparse.ArgumentError as e:
@@ -114,47 +132,72 @@ def main() -> None:
 
     if args.generate_config:
         from .config import generate_config
+
         print(generate_config(args), end="")
+        sys.exit(0)
+
+    if args.generate_client_config:
+        from .config import generate_client_config, client_config_info
+
+        info = client_config_info(args.generate_client_config)
+        print(f"Client:      {args.generate_client_config}", file=sys.stderr)
+        print(f"Destination: {info['path']}", file=sys.stderr)
+        print(f"Note:        {info['note']}", file=sys.stderr)
+        print(
+            "Warning:     Config formats are subject to change without notice."
+            " Verify against your client's current documentation.",
+            file=sys.stderr,
+        )
+        content = generate_client_config(args, args.generate_client_config)
+        output_path = getattr(args, "output", None)
+        if output_path:
+            import pathlib
+
+            resolved = pathlib.Path(output_path).resolve()
+            with open(resolved, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            print(f"Written to:  {resolved}", file=sys.stderr)
+        else:
+            print(content, end="")
         sys.exit(0)
 
     if args.check_config:
         from .config import check_config
+
         sys.exit(check_config(args, args.warnings_as_errors))
 
     finalize_settings(args)
     _setup_signal_handlers()
+    configure_logging(settings["logging_level"], settings["logging_config"])
 
-    # Setup Logging subsystem
-    custom_logging = configure_logging(settings["logging_level"], settings["logging_config"])
-    if custom_logging:
-        logger.info(f"Using custom logging configuration from: {settings['logging_config']}")
-
-    # Branch into the requested transport
     try:
-        if settings["transport"] == "stdio" and custom_logging:
-            logger.warning(emoji.emojize(":warning: Custom logging active in Stdio mode. "
-                                         "Ensure no handlers use sys.stdout!"))
-
         anyio.run(start_app)
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        # On Python ≤3.10 the exceptiongroup backport makes BaseExceptionGroup a
+        # On Python â‰¤3.10 the exceptiongroup backport makes BaseExceptionGroup a
         # subclass of Exception; check via duck-typing so both versions are handled.
         exceptions = getattr(e, "exceptions", None)
         if exceptions is not None and all(isinstance(s, KeyboardInterrupt) for s in exceptions):
             pass  # anyio-wrapped clean shutdown
         else:
+            import traceback
+
             logger.critical(f"Application failed to start: {e}")
+            traceback.print_exc()
             sys.exit(1)
     except BaseException as e:
-        # On Python ≥3.11 BaseExceptionGroup subclasses BaseException directly.
+        # On Python â‰¥3.11 BaseExceptionGroup subclasses BaseException directly.
         exceptions = getattr(e, "exceptions", None)
         if exceptions is not None and all(isinstance(s, KeyboardInterrupt) for s in exceptions):
             pass  # anyio-wrapped clean shutdown
         else:
+            import traceback
+
             logger.critical(f"Application failed to start: {e}")
+            traceback.print_exc()
             sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

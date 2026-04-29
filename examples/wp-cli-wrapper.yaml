@@ -7,44 +7,163 @@ mode: "command-wrapper"
 transport: "sse"
 port: 8080
 
+# Set cwd to the WordPress installation root so WP-CLI auto-detects wp-config.php,
+# or pass --path=<path> in each subcommand call.
+# cwd: "/path/to/wordpress/root/"
+
+groups:
+  wp_safety:
+    forbidden_patterns:
+      - "--exec"
+      - "--require"
+      - "--ssh"
+      - "--http"
+
 wrapped_commands:
+  - name: "wp_help"
+    description: "Get help and usage documentation for any WP-CLI command group.
+      Use this before calling other wp_* tools to discover available subcommands
+      and their options."
+    command: "wp help"
+    apply: [wp_safety]
+    allowed_args:
+      - "core"
+      - "plugin"
+      - "theme"
+      - "post"
+      - "user"
+      - "db"
+      - "cache"
+      - "transient"
+      - "media"
+      - "cron"
+      - "rewrite"
+      - "menu"
+    timeout: 15
+
+  - name: "wp_core"
+    description: "Check WordPress core version, available updates, and file integrity.
+      Also runs database schema upgrades. Call wp_help with 'core' to see subcommand options."
+    command: "wp core"
+    apply: [wp_safety]
+    allowed_args:
+      - "version"
+      - "check-update"
+      - "verify-checksums"
+      - "update-db"
+    timeout: 60
+
   - name: "wp_plugin"
-    description: "List, status, activate, or deactivate plugins."
+    description: "List, activate, deactivate, update, and inspect plugins. Installing,
+      deleting, and uninstalling plugins is blocked. Call wp_help with 'plugin' to see
+      subcommand options."
     command: "wp plugin"
-    # Denylist approach: Allow everything EXCEPT destructive actions.
+    apply: [wp_safety]
     forbidden_args:
-      - "uninstall"
       - "delete"
+      - "uninstall"
+      - "install"
     timeout: 60
 
   - name: "wp_theme"
-    description: "List, status, or manage themes."
+    description: "List, activate, update, and inspect themes. Installing and deleting
+      themes is blocked. Call wp_help with 'theme' to see subcommand options."
     command: "wp theme"
+    apply: [wp_safety]
+    forbidden_args:
+      - "delete"
+      - "install"
+    timeout: 30
+
+  - name: "wp_post"
+    description: "List, get, and manage posts, pages, and custom post types. Deleting
+      posts is blocked. Call wp_help with 'post' to see subcommand options."
+    command: "wp post"
+    apply: [wp_safety]
     forbidden_args:
       - "delete"
     timeout: 30
 
-  - name: "wp_option"
-    description: "Get or list site options."
-    command: "wp option"
-    # Allowlist approach (Opt-in): ONLY allow read operations.
+  - name: "wp_user"
+    description: "List, get, create, and update WordPress users and roles. Deleting
+      users is blocked. Call wp_help with 'user' to see subcommand options."
+    command: "wp user"
+    apply: [wp_safety]
+    forbidden_args:
+      - "delete"
+    timeout: 30
+
+  - name: "wp_db"
+    description: "Inspect database integrity and table sizes. Only check, tables, and
+      size operations are allowed. Call wp_help with 'db' to see subcommand options."
+    command: "wp db"
+    apply: [wp_safety]
+    allowed_args:
+      - "check"
+      - "tables"
+      - "size"
+    timeout: 120
+
+  - name: "wp_cache"
+    description: "Flush and inspect the WordPress object cache. Supports flush, get,
+      and type operations. Call wp_help with 'cache' to see subcommand options."
+    command: "wp cache"
+    apply: [wp_safety]
+    allowed_args:
+      - "flush"
+      - "get"
+      - "type"
+
+  - name: "wp_transient"
+    description: "Inspect the WordPress transient cache. Supports get, list, and delete
+      operations. Call wp_help with 'transient' to see subcommand options."
+    command: "wp transient"
+    apply: [wp_safety]
     allowed_args:
       - "get"
       - "list"
+      - "delete"
     timeout: 30
 
-  - name: "wp_site"
-    description: "Check site status or information."
-    command: "wp site"
+  - name: "wp_media"
+    description: "List media attachments, regenerate thumbnails, and inspect registered
+      image sizes. Call wp_help with 'media' to see subcommand options."
+    command: "wp media"
+    apply: [wp_safety]
     allowed_args:
       - "list"
-      - "size"
-      - "list --json"
+      - "regenerate"
+      - "image-size"
+    timeout: 120
+
+  - name: "wp_cron"
+    description: "List WP-Cron events and schedules, and manually trigger specific cron
+      events. Call wp_help with 'cron' to see subcommand options."
+    command: "wp cron"
+    apply: [wp_safety]
+    allowed_args:
+      - "event list"
+      - "event run"
+      - "schedule list"
     timeout: 30
 
-  - name: "wp_db_check"
-    description: "Check the database for errors/integrity."
-    command: "wp db check"
-    # Empty allowed_args means ONLY the base command is permitted.
-    allowed_args: []
-    timeout: 120
+  - name: "wp_rewrite"
+    description: "List rewrite rules or flush the rewrite cache to regenerate permalink
+      structures. Call wp_help with 'rewrite' to see subcommand options."
+    command: "wp rewrite"
+    apply: [wp_safety]
+    allowed_args:
+      - "list"
+      - "flush"
+    timeout: 30
+
+  - name: "wp_menu"
+    description: "List navigation menus, their items, and registered menu locations.
+      Call wp_help with 'menu' to see subcommand options."
+    command: "wp menu"
+    apply: [wp_safety]
+    allowed_args:
+      - "list"
+      - "item list"
+      - "location list"
+    timeout: 15

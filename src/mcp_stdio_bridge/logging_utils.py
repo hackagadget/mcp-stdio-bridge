@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: Unlicense
+# SPDX-License-Identifier: Unlicense
 """
 Logging Utilities
 =================
@@ -8,6 +8,7 @@ YAML, JSON, and INI external configuration files. Ensures that logging
 output is directed to sys.stderr by default to maintain compatibility
 with the MCP stdio transport.
 """
+
 import os
 import sys
 import logging
@@ -18,6 +19,7 @@ from typing import Optional
 
 # Pre-defined logger name used throughout the application.
 logger = logging.getLogger("mcp-bridge")
+
 
 def configure_logging(level_name: str, config_file: Optional[str] = None) -> bool:
     """
@@ -34,12 +36,12 @@ def configure_logging(level_name: str, config_file: Optional[str] = None) -> boo
     if config_file and os.path.exists(config_file):
         try:
             ext = os.path.splitext(config_file)[1].lower()
-            if ext in ('.yaml', '.yml'):
-                with open(config_file, 'rt') as f:
+            if ext in (".yaml", ".yml"):
+                with open(config_file, "rt") as f:
                     config = yaml.safe_load(f.read())
                 logging.config.dictConfig(config)
-            elif ext == '.json':
-                with open(config_file, 'rt') as f:
+            elif ext == ".json":
+                with open(config_file, "rt") as f:
                     config = json.loads(f.read())
                 logging.config.dictConfig(config)
             else:
@@ -53,8 +55,8 @@ def configure_logging(level_name: str, config_file: Optional[str] = None) -> boo
     numeric_level = getattr(logging, level_name.upper(), logging.INFO)
     logging.basicConfig(
         level=numeric_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         stream=sys.stderr,
-        force=True
+        force=True,
     )
     return False
