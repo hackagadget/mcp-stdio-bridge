@@ -63,13 +63,12 @@ htmlcov/
 # Project specific
 config.yaml
 *.bak
+standalone_tests/config.mock.yaml
+standalone_tests/config.generated.yaml
 *,cover
 
 # AI/Project artifacts
-*.local.json
-*.local.md
-*.local.ps1
-*.local.yaml
+*.local.*
 CONVERSATION_HISTORY.md
 implementation_plan.md
 task.md
