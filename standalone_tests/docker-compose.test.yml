@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: Unlicense
+services:
+  # Base SSH server (The "Remote" Target)
+  ssh-server:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-ssh-server
+    hostname: mcp-ssh-server
+    user: root
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "22"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  # Case 1: Direct SSH interaction
+  ssh-direct-test:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-ssh-direct
+    user: mcpuser
+    depends_on:
+      ssh-server:
+        condition: service_healthy
+    command: >
+      python standalone_tests/test_mcp_ssh_stdio.py
+      --host mcpuser@ssh-server
+      --config /app/standalone_tests/config.mock.yaml
+      --mock-script /app/standalone_tests/mock_wp.py
+      --ssh-args "-o BatchMode=yes -o StrictHostKeyChecking=no"
+
+  # Case 2: Bridge Proxy (Target Scenario)
+  ssh-proxy-bridge:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-ssh-proxy-bridge
+    hostname: mcp-ssh-proxy-bridge
+    user: mcpuser
+    depends_on:
+      ssh-server:
+        condition: service_healthy
+    command:
+      - "python"
+      - "-u"
+      - "-m"
+      - "mcp_stdio_bridge.main"
+      - "--transport"
+      - "sse"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--mode"
+      - "proxy"
+      - "--verbose"
+      - "--command"
+      - "ssh -T -o BatchMode=yes -o StrictHostKeyChecking=no mcpuser@ssh-server 'python -u -m mcp_stdio_bridge.main --transport stdio --config /app/standalone_tests/config.mock.yaml'"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.connect(('localhost', 8000))"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  ssh-proxy-client:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-ssh-proxy-client
+    user: mcpuser
+    depends_on:
+      ssh-proxy-bridge:
+        condition: service_healthy
+    command: python standalone_tests/test_mcp_local_bridge.py --url http://ssh-proxy-bridge:8000
+
+  # Scenario: Local Stdio Mock
+  local-mock:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-local-mock
+    user: mcpuser
+    command: python standalone_tests/test_local_mock.py
+
+  # Scenario: Local SSE Mock
+  bridge:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-bridge-server
+    user: mcpuser
+    command: python -m mcp_stdio_bridge.main --config standalone_tests/config.mock.yaml --transport sse --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.connect(('localhost', 8000))"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+
+  client:
+    build:
+      context: ..
+      dockerfile: standalone_tests/Dockerfile.test
+    container_name: mcp-bridge-client
+    user: mcpuser
+    depends_on:
+      bridge:
+        condition: service_healthy
+    command: python standalone_tests/test_mcp_local_bridge.py --url http://bridge:8000

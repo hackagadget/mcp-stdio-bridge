@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Unlicense
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    openssh-server \
+    openssh-client \
+    sudo \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Setup user
+RUN useradd -m -s /bin/bash mcpuser && echo "mcpuser:mcp" | chpasswd
+RUN echo "mcpuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# 1. PRE-GENERATE DETERMINISTIC KEYS (Same for all containers)
+USER mcpuser
+RUN mkdir -p /home/mcpuser/.ssh && \
+    ssh-keygen -t rsa -b 4096 -N "" -f /home/mcpuser/.ssh/id_rsa
+
+USER root
+# 2. CONFIGURE SSHD (Bypass home directory permission strictness)
+# We put authorized_keys in a GLOBAL location that is NOT /home/mcpuser
+RUN cp /home/mcpuser/.ssh/id_rsa.pub /etc/ssh/authorized_keys_mcpuser && \
+    chmod 644 /etc/ssh/authorized_keys_mcpuser
+
+RUN echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config && \
+    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config && \
+    echo "AuthorizedKeysFile /etc/ssh/authorized_keys_mcpuser" >> /etc/ssh/sshd_config
+
+# 3. CONFIGURE SSH CLIENT
+RUN echo "Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n" >> /etc/ssh/ssh_config
+
+# Copy source and tests
+COPY pyproject.toml .
+COPY src/ ./src/
+COPY standalone_tests/ ./standalone_tests/
+
+# Install dependencies
+RUN pip install -e ".[test]"
+
+# Generate config.mock.yaml from template with Docker-appropriate values
+RUN python -c "\
+with open('standalone_tests/config.mock.template.yaml') as f: t = f.read();\
+t = t.replace('{python}', 'python').replace('{mock_script}', '/app/standalone_tests/mock_wp.py');\
+open('standalone_tests/config.mock.yaml', 'w').write(t)"
+
+# Fix permissions and CRLF for entrypoint; allow mcpuser to write generated configs
+RUN sed -i 's/\r$//' /app/standalone_tests/entrypoint.sh && \
+    chmod +x /app/standalone_tests/entrypoint.sh && \
+    chown -R mcpuser:mcpuser /app/standalone_tests
+
+# Environment
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["/app/standalone_tests/entrypoint.sh"]
+CMD ["/usr/sbin/sshd", "-D"]
