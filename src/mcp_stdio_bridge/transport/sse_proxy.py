@@ -42,6 +42,13 @@ async def proxy_asgi_app(scope: Any, receive: Any, send: Any) -> None:
     if scope["type"] != "http":
         return
 
+    method = scope["method"]
+
+    # CORS preflight — must be answered before auth so browsers can negotiate
+    if method == "OPTIONS":
+        await _send_cors_preflight(send)
+        return
+
     # 1. AUTHENTICATION
     if settings["api_key"]:
         headers = dict(scope.get("headers", []))
@@ -55,14 +62,20 @@ async def proxy_asgi_app(scope: Any, receive: Any, send: Any) -> None:
             return
 
     path = scope["path"]
-    method = scope["method"]
 
     # 2. ROUTING
-    if path == "/sse" and method == "GET":
-        await _handle_proxy_sse(scope, receive, send)
-    elif path.startswith("/messages") and method == "POST":
-        await _handle_proxy_post(scope, receive, send)
+    if path == "/sse":
+        if method == "GET":
+            await _handle_proxy_sse(scope, receive, send)
+        else:
+            await _send_plain_response(send, 405, b"Method Not Allowed")
+    elif path.startswith("/messages"):
+        if method == "POST":
+            await _handle_proxy_post(scope, receive, send)
+        else:
+            await _send_plain_response(send, 405, b"Method Not Allowed")
     else:
+        logger.warning(f"404 {method} {path}")
         await _send_plain_response(send, 404, b"Not Found")
 
 
@@ -76,6 +89,23 @@ async def _send_plain_response(send: Any, status: int, body: bytes) -> None:
         }
     )
     await send({"type": "http.response.body", "body": body})
+
+
+async def _send_cors_preflight(send: Any) -> None:
+    """Respond to a CORS OPTIONS preflight so browser-hosted clients can negotiate."""
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 204,
+            "headers": [
+                (b"access-control-allow-origin", b"*"),
+                (b"access-control-allow-methods", b"GET, POST, OPTIONS"),
+                (b"access-control-allow-headers", b"content-type, x-api-key"),
+                (b"access-control-max-age", b"86400"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": b""})
 
 
 async def _handle_proxy_post(scope: Any, receive: Any, send: Any) -> None:

@@ -205,11 +205,81 @@ async def test_proxy_asgi_app_404() -> None:
         "query_string": b"",
     }
     mock_send = AsyncMock()
-    await proxy_asgi_app(mock_scope, AsyncMock(), mock_send)
+    with patch("mcp_stdio_bridge.transport.sse_proxy.logger"):
+        await proxy_asgi_app(mock_scope, AsyncMock(), mock_send)
     assert any(
         c[0][0].get("status") == 404
         for c in mock_send.call_args_list
         if c[0][0]["type"] == "http.response.start"
+    )
+
+
+@pytest.mark.anyio
+async def test_proxy_asgi_app_405_wrong_method() -> None:
+    """POST /sse returns 405 Method Not Allowed, not 404."""
+    from mcp_stdio_bridge.config import settings
+
+    settings["api_key"] = None
+    mock_scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/sse",
+        "headers": [],
+        "query_string": b"",
+    }
+    mock_send = AsyncMock()
+    await proxy_asgi_app(mock_scope, AsyncMock(), mock_send)
+    assert any(
+        c[0][0].get("status") == 405
+        for c in mock_send.call_args_list
+        if c[0][0]["type"] == "http.response.start"
+    )
+
+
+@pytest.mark.anyio
+async def test_proxy_asgi_app_options_preflight() -> None:
+    """OPTIONS preflight returns 204 with CORS headers without requiring auth."""
+    from mcp_stdio_bridge.config import settings
+
+    settings["api_key"] = "secret"
+    mock_scope = {
+        "type": "http",
+        "method": "OPTIONS",
+        "path": "/messages/",
+        "headers": [],
+        "query_string": b"",
+    }
+    mock_send = AsyncMock()
+    await proxy_asgi_app(mock_scope, AsyncMock(), mock_send)
+    response_start = next(
+        c[0][0]
+        for c in mock_send.call_args_list
+        if c[0][0]["type"] == "http.response.start"
+    )
+    assert response_start["status"] == 204
+    headers = dict(response_start["headers"])
+    assert b"access-control-allow-origin" in headers
+
+
+@pytest.mark.anyio
+async def test_proxy_asgi_app_404_logs_warning() -> None:
+    """Unmatched routes log a warning with the method and path."""
+    from mcp_stdio_bridge.config import settings
+
+    settings["api_key"] = None
+    mock_scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/unknown",
+        "headers": [],
+        "query_string": b"",
+    }
+    mock_send = AsyncMock()
+    with patch("mcp_stdio_bridge.transport.sse_proxy.logger") as mock_logger:
+        await proxy_asgi_app(mock_scope, AsyncMock(), mock_send)
+    assert any(
+        "GET" in str(call) and "/unknown" in str(call)
+        for call in mock_logger.warning.call_args_list
     )
 
 
