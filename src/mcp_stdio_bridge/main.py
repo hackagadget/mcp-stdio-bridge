@@ -83,8 +83,8 @@ async def config_watcher() -> None:
             if reload_settings():
                 configure_logging(settings["logging_level"], settings["logging_config"])
                 # Signal other components to refresh
-                sse_refresh()  # pragma: no cover
-                stdio_refresh()  # pragma: no cover
+                sse_refresh()
+                stdio_refresh()
                 logger.info(
                     emoji.emojize(":check_mark_button: Configuration reloaded successfully.")
                 )
@@ -97,19 +97,19 @@ async def start_app() -> None:
             tg.start_soon(config_watcher)
 
         if settings["transport"] == "stdio":
-            from .transport.stdio import run_stdio_transport  # pragma: no cover
+            from .transport.stdio import run_stdio_transport
 
             await run_stdio_transport()
         else:
             # SSE TRANSPORT: Dispatch based on mode
             if settings.get("mode") == "proxy":
-                from .transport.sse_proxy import run_proxy_transport  # pragma: no cover
+                from .transport.sse_proxy import run_proxy_transport
 
                 await run_proxy_transport()
             else:
-                from .transport.sse_wrapper import run_wrapper_transport  # pragma: no cover
+                from .transport.sse_wrapper import run_wrapper_transport
 
-                await run_wrapper_transport()  # pragma: no cover
+                await run_wrapper_transport()
 
 
 def main() -> None:

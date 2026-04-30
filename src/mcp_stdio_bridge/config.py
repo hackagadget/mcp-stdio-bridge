@@ -104,6 +104,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-message-size", type=int, help="Max message size in bytes")
     parser.add_argument("--idle-timeout", type=int, help="Idle timeout in seconds")
     parser.add_argument("--cwd", help="Global working directory for subprocesses")
+    parser.add_argument("--max-retries", type=int, help="Max command retries in proxy mode")
+    parser.add_argument("--retry-delay", type=float, help="Initial retry delay in seconds")
+    parser.add_argument("--retry-max-delay", type=float, help="Maximum retry delay in seconds")
+    parser.add_argument("--retry-multiplier", type=float, help="Retry delay multiplier")
     parser.add_argument(
         "--watch-config", action="store_true", help="Enable dynamic config reloading"
     )

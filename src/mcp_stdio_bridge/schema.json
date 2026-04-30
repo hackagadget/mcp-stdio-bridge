@@ -129,6 +129,10 @@
     "logging_level": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], "default": "INFO" },
     "logging_config": { "type": ["string", "null"] },
     "idle_timeout": { "type": "integer", "default": 3600 },
+    "max_retries": { "type": "integer", "default": 0, "description": "Max command retries in proxy mode." },
+    "retry_delay": { "type": "number", "default": 1.0, "description": "Initial retry delay in seconds." },
+    "retry_max_delay": { "type": "number", "default": 60.0, "description": "Maximum retry delay in seconds." },
+    "retry_multiplier": { "type": "number", "default": 2.0, "description": "Retry delay multiplier." },
     "cwd": { "type": ["string", "null"], "default": null, "description": "Global working directory for subprocesses." },
     "env_allowlist": { "type": ["array", "null"], "items": { "type": "string" } },
     "env_denylist": { "type": "array", "items": { "type": "string" } }

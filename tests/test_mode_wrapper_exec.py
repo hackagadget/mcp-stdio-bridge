@@ -164,6 +164,29 @@ async def test_call_tool_logic_allowed_args_match() -> None:
 
 
 @pytest.mark.anyio
+async def test_call_tool_logic_bare_command_bypasses_allowlist() -> None:
+    """Empty subcommand is allowed even when an allowed_args filter is configured."""
+    from mcp_stdio_bridge.mode.wrapper import create_wrapper_server
+    from mcp_stdio_bridge.config import settings
+
+    settings["wrapped_commands"] = [
+        {"name": "safe", "command": "echo", "description": "safe", "allowed_args": ["hello"]}
+    ]
+    server = create_wrapper_server()
+
+    mock_result = MagicMock()
+    mock_result.stdout = b""
+    mock_result.returncode = 0
+    mock_p = AsyncMock()
+    mock_p.communicate.return_value = (b"", b"")
+    mock_p.returncode = 0
+    with patch("anyio.run_process", return_value=mock_result), \
+         patch("asyncio.create_subprocess_exec", return_value=mock_p):
+        result = await server.call_tool_logic("safe", {"subcommand": ""})
+    assert "not in the allowed list" not in result[0].text
+
+
+@pytest.mark.anyio
 async def test_call_tool_logic_custom_env() -> None:
     """env dict on a wrapped command is merged into the subprocess environment (line 171)."""
     from mcp_stdio_bridge.mode.wrapper import create_wrapper_server

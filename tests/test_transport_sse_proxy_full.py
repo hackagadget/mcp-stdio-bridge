@@ -257,3 +257,89 @@ async def test_run_proxy_transport_init() -> None:
     with patch("uvicorn.Server", return_value=mock_server):
         await run_proxy_transport()
         assert mock_server.serve.called
+
+
+@pytest.mark.anyio
+async def test_handle_proxy_sse_returncode_zero_resets_manager() -> None:
+    """retry_manager.reset() is called when the subprocess exits cleanly (line 206)."""
+    from mcp_stdio_bridge.config import settings
+    from mcp_stdio_bridge.transport import sse_proxy
+
+    settings["command"] = "echo"
+    sse_proxy.connection_semaphore = None
+    sse_proxy.retry_manager = None
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 123
+    mock_proc.returncode = 0
+
+    class MockCtx:
+        async def __aenter__(self) -> Any:
+            return mock_proc
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    with (
+        patch("anyio.open_process", return_value=MockCtx()),
+        patch("mcp_stdio_bridge.transport.sse_proxy.bridge_streams", new_callable=AsyncMock),
+    ):
+        await _handle_proxy_sse(
+            {"type": "http", "client": ["127.0.0.1", 1234]}, AsyncMock(), AsyncMock()
+        )
+
+    assert sse_proxy.retry_manager is not None
+    assert sse_proxy.retry_manager.attempts == 0
+
+
+@pytest.mark.anyio
+async def test_handle_proxy_sse_send_worker_exception() -> None:
+    """send_worker silently absorbs exceptions raised by the ASGI send callable (line 178)."""
+    from mcp_stdio_bridge.config import settings
+    from mcp_stdio_bridge.transport import sse_proxy
+
+    settings["command"] = "echo"
+    sse_proxy.connection_semaphore = None
+    sse_proxy.retry_manager = None
+
+    mock_scope = {"type": "http", "client": ["127.0.0.1", 1234]}
+
+    async def disconnect_later() -> dict[str, str]:
+        await anyio.sleep(0.15)
+        return {"type": "http.disconnect"}
+
+    send_calls = 0
+
+    async def raising_send(msg: dict[str, Any]) -> None:
+        nonlocal send_calls
+        send_calls += 1
+        # Raise on the third call, which is the body send inside send_worker
+        if send_calls > 2 and msg.get("more_body"):
+            raise RuntimeError("client disconnected")
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 123
+    mock_proc.returncode = 0
+
+    class MockCtx:
+        async def __aenter__(self) -> Any:
+            return mock_proc
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    async def simulate_bridge(r: Any, s: Any, p: Any) -> None:
+        await s.send("hello-from-proxy")
+        await anyio.sleep(0.05)
+
+    with (
+        patch("anyio.open_process", return_value=MockCtx()),
+        patch(
+            "mcp_stdio_bridge.transport.sse_proxy.bridge_streams",
+            new_callable=AsyncMock,
+            side_effect=simulate_bridge,
+        ),
+    ):
+        await _handle_proxy_sse(mock_scope, AsyncMock(side_effect=disconnect_later), raising_send)
+
+    assert send_calls > 2

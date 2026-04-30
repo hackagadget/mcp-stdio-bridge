@@ -81,12 +81,26 @@ Add this to your `settings.json`:
 
 ## Operation Modes
 
-The bridge can operate in two modes:
-
 ### 1. Proxy Mode (`mode: "proxy"`)
 The default mode. It spawns a new instance of a single MCP stdio server for every SSE connection and forwards all traffic between them. Requires the `command` setting.
 
+#### Command Retries
+In proxy mode, you can enable automatic retries with exponential backoff to handle unstable or crashing subprocesses.
+
+- **Stdio Transport**: If the subprocess crashes, the bridge will keep the main connection open and attempt to restart the subprocess in the background after the backoff delay.
+- **SSE Transport**: If the subprocess crashes, the active SSE session is dropped. When the client reconnects, the bridge enforces the backoff delay *before* spawning the new subprocess.
+
+**Example:**
+```yaml
+mode: "proxy"
+command: "python my_unstable_server.py"
+max_retries: 5
+retry_delay: 2.0
+retry_multiplier: 1.5
+```
+
 ### 2. Command Wrapper Mode (`mode: "command-wrapper"`)
+
 Directly exposes one or more standard CLI tools as MCP tools. The bridge hosts an internal MCP server and executes the tools on demand. Requires the `wrapped_commands` setting.
 
 ## Settings

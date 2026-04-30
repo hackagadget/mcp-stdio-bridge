@@ -28,8 +28,12 @@ async def test_stdio_transport_proxy_basic() -> None:
     """Test stdio transport in proxy mode initialization."""
     settings["mode"] = "proxy"
     settings["command"] = "echo hello"
+    settings["max_retries"] = 0
 
     mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.wait = AsyncMock(return_value=0)
+    mock_proc.pid = 1234
     mock_proc.stdin = AsyncMock()
     mock_proc.stdout = AsyncMock()
     mock_proc.stderr = AsyncMock()
@@ -41,7 +45,10 @@ async def test_stdio_transport_proxy_basic() -> None:
         async def __aexit__(self, *args: object) -> None:
             pass
 
-    with patch("anyio.open_process", return_value=MockCtx()):
+    async def mock_open_process(*args: Any, **kwargs: Any) -> Any:
+        return MockCtx()
+
+    with patch("anyio.open_process", side_effect=mock_open_process):
         await run_stdio_transport()
         assert True
 

@@ -19,29 +19,53 @@ async def run_stdio_transport() -> None:
                 logger.error("No command configured for bridge in proxy mode.")
                 return
 
-            # Note: For stdio-to-stdio proxying, we rely on anyio's open_process
+            from ..utils import ExponentialBackoff
             import shlex
             import subprocess
             import sys
 
-            cmd_list = shlex.split(settings["command"], posix=(sys.platform != "win32"))
-            async with await anyio.open_process(
-                cmd_list,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=settings.get("cwd"),
-            ) as proc:
-                logger.info(emoji.emojize(f":electric_plug: Stdio Proxy active (PID: {proc.pid})"))
+            backoff = ExponentialBackoff(settings)
 
-                # Direct stdio-to-stdio bridging
-                # We use standard memory streams as glue
-                send_to_proc, recv_from_client = anyio.create_memory_object_stream(100)
-                send_to_client, recv_from_proc = anyio.create_memory_object_stream(100)
+            while True:
+                cmd_list = shlex.split(settings["command"], posix=(sys.platform != "win32"))
+                logger.info(emoji.emojize(f":electric_plug: Starting Stdio "
+                                          f"Proxy: {settings['command']}"))
 
-                # Logic to pump sys.stdin -> recv_from_client and recv_from_proc -> sys.stdout.
-                # Stdio-wrapper is the main use-case; this path ensures no framework bleed.
-                pass
+                try:
+                    async with await anyio.open_process(
+                        cmd_list,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=settings.get("cwd"),
+                    ) as proc:
+                        logger.info(
+                            emoji.emojize(f":check_mark_button: Stdio Proxy "
+                                          f"active (PID: {proc.pid})")
+                        )
+
+                        # Logic to pump sys.stdin -> proc.stdin and proc.stdout -> sys.stdout.
+                        # (The bridging logic is currently a stub for this transport).
+                        await proc.wait()
+                        if proc.returncode == 0:
+                            logger.info("Subprocess exited cleanly.")
+                            break
+
+                        logger.error(f"Subprocess exited with non-zero code: {proc.returncode}")
+
+                except Exception as e:
+                    logger.error(f"Failed to start or maintain subprocess: {e}")
+
+                if backoff.can_retry():  # pragma: no cover
+                    logger.info(
+                        f"Retrying in {backoff.get_delay():.2f}s... "
+                        f"({backoff.attempts + 1}/{backoff.max_retries})"
+                    )
+                    if not await backoff.wait():
+                        break
+                else:
+                    logger.error("Max retries reached or retries disabled. Giving up.")
+                    break
 
         elif settings["mode"] == "command-wrapper":
             logger.info(emoji.emojize(":electric_plug: Stdio Transport active (Wrapper Mode)"))

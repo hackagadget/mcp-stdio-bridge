@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-04-29
+
+### Added
+
+- **Exponential Backoff Retries**: Proxy mode now supports automatic subprocess restarts with
+  configurable exponential backoff. Four new CLI flags and config keys control the behaviour:
+  `max_retries`, `retry_delay` (initial delay in seconds), `retry_max_delay` (cap), and
+  `retry_multiplier` (growth factor). Stdio transport restarts the subprocess in the background
+  after each crash; SSE transport enforces the backoff delay before accepting the next
+  incoming connection.
+
+### Changed
+
+- **Bare-command allowlist bypass**: An empty subcommand (calling the wrapped tool with no
+  arguments) now bypasses the `allowed_args` and `allowed_patterns` filters. The allowlist
+  governs what follows the command; a bare invocation has no argument surface to restrict.
+
 ## [1.3.1] - 2026-04-28
 
 ### Added
@@ -205,6 +222,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker support** — `Dockerfile` and `docker-compose.yaml` included.
 - **100% test coverage** across all modules.
 
+[1.4.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.4.0
+[1.3.1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.3.1
 [1.3.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.3.0
 [1.2.2]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.2
 [1.2.1.post1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.2.1.post1

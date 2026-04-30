@@ -74,7 +74,7 @@ class SecurityHeadersMiddleware:
         async def send_with_headers(message: Dict[str, Any]) -> None:
             if message["type"] == "http.response.start":
                 headers = dict(message.get("headers", []))
-                if settings["security_headers"]:  # pragma: no cover
+                if settings["security_headers"]:
                     headers[b"x-content-type-options"] = b"nosniff"
                     headers[b"x-frame-options"] = b"DENY"
                     headers[b"x-xss-protection"] = b"1; mode=block"
@@ -111,13 +111,13 @@ class RateLimitMiddleware:
         # Get client IP from headers or scope
         headers = dict(scope.get("headers", []))
         client_ip = headers.get(b"x-forwarded-for", b"").decode().split(",")[0].strip()
-        if not client_ip:  # pragma: no cover
+        if not client_ip:
             client_ip = scope.get("client", ["unknown"])[0]
 
         now = time.monotonic()
         window_start, count = self._state[client_ip]
 
-        if now - window_start >= window:  # pragma: no cover
+        if now - window_start >= window:
             self._state[client_ip] = (now, 1)
         elif count >= limit:
             logger.warning(f"Rate limit exceeded for {client_ip}")
@@ -133,7 +133,7 @@ class RateLimitMiddleware:
             {
                 "type": "http.response.start",
                 "status": 429,
-                "headers": [(b"content-type", b"text/plain")],  # pragma: no cover
+                "headers": [(b"content-type", b"text/plain")],
             }
         )
         await send(

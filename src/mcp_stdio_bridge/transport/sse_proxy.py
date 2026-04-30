@@ -25,6 +25,7 @@ from ..mode.proxy import bridge_streams
 # Global state for active sessions
 sessions: Dict[str, Any] = {}
 connection_semaphore = None
+retry_manager = None
 
 
 async def proxy_asgi_app(scope: Any, receive: Any, send: Any) -> None:
@@ -115,14 +116,28 @@ async def _handle_proxy_post(scope: Any, receive: Any, send: Any) -> None:
 
 async def _handle_proxy_sse(scope: Any, receive: Any, send: Any) -> None:
     """Handles GET /sse: Orchestrates the subprocess and event stream."""
-    global connection_semaphore
+    global connection_semaphore, retry_manager
     client_ip = scope.get("client", ["unknown"])[0]
 
-    if connection_semaphore is None:
-        connection_semaphore = anyio.CapacityLimiter(settings["max_connections"])
-
     try:
+        if connection_semaphore is None:
+            connection_semaphore = anyio.CapacityLimiter(settings["max_connections"])
+
+        if retry_manager is None:
+            from ..utils import ExponentialBackoff
+
+            retry_manager = ExponentialBackoff(settings)
+
         async with connection_semaphore:
+            # Enforce backoff if there were previous crashes
+            if retry_manager.attempts > 0:
+                delay = retry_manager.get_delay()
+                logger.warning(
+                    f"Throttling connection from {client_ip} "
+                    f"due to previous crash ({delay:.2f}s delay)"
+                )
+                await anyio.sleep(delay)
+
             session_id = str(uuid.uuid4())
             logger.info(f"==> [PROXY-SSE] Session {session_id} starting for {client_ip}")
 
@@ -175,8 +190,23 @@ async def _handle_proxy_sse(scope: Any, receive: Any, send: Any) -> None:
                         cwd=settings.get("cwd"),
                     ) as proc:
                         logger.info(f"==> [PROXY-SSH] Subprocess PID: {proc.pid}")
-                        await bridge_streams(recv_from_sse, send_to_client, proc)
+                        try:
+                            await bridge_streams(recv_from_sse, send_to_client, proc)
+                        finally:
+                            await send_to_client.aclose()
                         tg.cancel_scope.cancel()
+
+                        if proc.returncode != 0:
+                            retry_manager.attempts += 1
+                            logger.error(
+                                f"Subprocess crashed with code {proc.returncode}. "
+                                "Next connection will be delayed."
+                            )
+                        else:
+                            retry_manager.reset()
+            except Exception as e:
+                retry_manager.attempts += 1
+                logger.error(f"Bridge error or subprocess failure: {e}")
             finally:
                 if session_id in sessions:
                     del sessions[session_id]

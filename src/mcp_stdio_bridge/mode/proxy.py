@@ -45,7 +45,7 @@ async def bridge_streams(
         """Subprocess Stdout -> SSE"""
         logger.info("==> [BRIDGE] 'proc_to_sse' task started.")
         try:
-            if not proc.stdout:  # pragma: no cover
+            if not proc.stdout:
                 logger.error("==> [BRIDGE] Subprocess stdout is missing!")
                 return
 
@@ -64,7 +64,7 @@ async def bridge_streams(
         """Subprocess Stderr -> Logs"""
         logger.info("==> [BRIDGE] 'drain_stderr' task started.")
         if not proc.stderr:
-            return  # pragma: no cover
+            return
         try:
             async for line in proc.stderr:
                 logger.warning(f"==> [SUBPROCESS STDERR] {line.decode().strip()}")

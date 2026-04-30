@@ -43,7 +43,7 @@ def apply_groups(cmd_config: Dict[str, Any], groups: Dict[str, Any]) -> Dict[str
             continue
         if field in _LIST_FIELDS:
             existing = effective.get(field, [])
-            for item in value:  # pragma: no cover
+            for item in value:
                 if item not in existing:
                     existing.append(item)
             effective[field] = existing
@@ -69,7 +69,7 @@ def create_wrapper_server() -> Any:
             tools_map[name] = effective
         return tools_map
 
-    async def list_tools_impl() -> List[types.Tool]:  # pragma: no cover
+    async def list_tools_impl() -> List[types.Tool]:
         tools_map = get_validated_tools()
         return [
             types.Tool(
@@ -92,7 +92,7 @@ def create_wrapper_server() -> Any:
 
     async def call_tool_impl(name: str, arguments: dict[str, Any]) -> List[types.TextContent]:
         tools_map = get_validated_tools()
-        if name not in tools_map:  # pragma: no cover
+        if name not in tools_map:
             raise ValueError(f"Unknown tool: {name}")
 
         cmd_config = tools_map[name]
@@ -127,7 +127,7 @@ def create_wrapper_server() -> Any:
                         )
                     ]
 
-        if allowed_args or allowed_patterns:
+        if (allowed_args or allowed_patterns) and cmd_string:
             is_allowed = False
             for permitted in allowed_args:
                 if cmd_string_lower.startswith(permitted.lower().strip()):
@@ -138,7 +138,7 @@ def create_wrapper_server() -> Any:
                     if re.search(pattern, cmd_string, re.IGNORECASE):
                         is_allowed = True
                         break
-            if not is_allowed:  # pragma: no cover
+            if not is_allowed:
                 return [
                     types.TextContent(
                         type="text",
@@ -183,7 +183,7 @@ def create_wrapper_server() -> Any:
                 try:
                     stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=time_limit)
                     output = stdout.decode().strip()
-                except asyncio.TimeoutError:  # pragma: no cover
+                except asyncio.TimeoutError:
                     if proc.returncode is None:
                         proc.terminate()
                     return [
