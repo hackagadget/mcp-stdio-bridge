@@ -8,14 +8,22 @@ from mcp_stdio_bridge.transport.sse_proxy import _handle_proxy_sse as handle_pro
 from mcp_stdio_bridge.config import settings
 
 
+_FAKE_SIGHUP = 1  # SIGHUP value on Linux; used to create the attribute in Windows tests
+
+
 def test_setup_signal_handlers_posix() -> None:
     """Test _setup_signal_handlers on POSIX (mocked)."""
-    with patch("sys.platform", "linux"), patch("signal.signal") as mock_signal:
+    with (
+        patch("sys.platform", "linux"),
+        patch("signal.signal") as mock_signal,
+        patch.object(signal, "SIGHUP", _FAKE_SIGHUP, create=True),
+    ):
         _setup_signal_handlers()
         assert mock_signal.called
         sig_calls = [call[0][0] for call in mock_signal.call_args_list]
         assert signal.SIGTERM in sig_calls
         assert signal.SIGINT in sig_calls
+        assert _FAKE_SIGHUP in sig_calls
 
         handler = [
             call[0][1] for call in mock_signal.call_args_list if call[0][0] == signal.SIGINT
@@ -26,12 +34,60 @@ def test_setup_signal_handlers_posix() -> None:
         assert handler(signal.SIGINT, None) is None
 
 
+def test_sighup_triggers_reload() -> None:
+    """SIGHUP handler calls reload_settings and the refresh helpers."""
+    with (
+        patch("sys.platform", "linux"),
+        patch("signal.signal") as mock_signal,
+        patch.object(signal, "SIGHUP", _FAKE_SIGHUP, create=True),
+        patch("mcp_stdio_bridge.main.reload_settings", return_value=True) as mock_reload,
+        patch("mcp_stdio_bridge.main.configure_logging") as mock_logging,
+        patch("mcp_stdio_bridge.main.sse_refresh") as mock_sse,
+        patch("mcp_stdio_bridge.main.stdio_refresh") as mock_stdio,
+        patch("mcp_stdio_bridge.main.logger"),
+    ):
+        _setup_signal_handlers()
+        sighup_handler = next(
+            call[0][1]
+            for call in mock_signal.call_args_list
+            if call[0][0] == _FAKE_SIGHUP
+        )
+        sighup_handler(_FAKE_SIGHUP, None)
+
+    mock_reload.assert_called_once()
+    mock_logging.assert_called_once()
+    mock_sse.assert_called_once()
+    mock_stdio.assert_called_once()
+
+
+def test_sighup_noop_when_reload_fails() -> None:
+    """SIGHUP handler skips refresh if reload_settings returns False."""
+    with (
+        patch("sys.platform", "linux"),
+        patch("signal.signal") as mock_signal,
+        patch.object(signal, "SIGHUP", _FAKE_SIGHUP, create=True),
+        patch("mcp_stdio_bridge.main.reload_settings", return_value=False),
+        patch("mcp_stdio_bridge.main.sse_refresh") as mock_sse,
+        patch("mcp_stdio_bridge.main.logger"),
+    ):
+        _setup_signal_handlers()
+        sighup_handler = next(
+            call[0][1]
+            for call in mock_signal.call_args_list
+            if call[0][0] == _FAKE_SIGHUP
+        )
+        sighup_handler(_FAKE_SIGHUP, None)
+
+    assert not mock_sse.called
+
+
 def test_setup_signal_handlers_win32() -> None:
-    """Test _setup_signal_handlers on win32."""
+    """Test _setup_signal_handlers on win32 — SIGHUP is not registered."""
     with patch("sys.platform", "win32"), patch("signal.signal") as mock_signal:
         _setup_signal_handlers()
         sig_calls = [call[0][0] for call in mock_signal.call_args_list]
         assert signal.SIGINT in sig_calls
+        assert _FAKE_SIGHUP not in sig_calls
 
 
 def _make_mock_proc() -> tuple[MagicMock, Any]:

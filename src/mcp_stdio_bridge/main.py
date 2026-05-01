@@ -41,6 +41,51 @@ def stdio_refresh() -> None:
         pass
 
 
+def _write_pid_file(path: str) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+        logger.debug(f"PID file written: {path}")
+    except OSError as e:
+        logger.warning(f"Could not write PID file {path!r}: {e}")
+
+
+def _remove_pid_file(path: str) -> None:
+    try:
+        os.unlink(path)
+        logger.debug(f"PID file removed: {path}")
+    except OSError:
+        pass
+
+
+def _daemonize() -> None:
+    """Detach from the controlling terminal and run as a background daemon (POSIX only)."""
+    if sys.platform == "win32":  # pragma: no cover
+        logger.warning("--daemonize is not supported on Windows; running in foreground")
+        return
+
+    # First fork: let the shell think the command has finished.
+    pid = os.fork()
+    if pid > 0:
+        os._exit(0)
+
+    # Become the session leader of a new session with no controlling terminal.
+    os.setsid()
+
+    # Second fork: ensure the daemon can never re-acquire a controlling terminal.
+    pid = os.fork()
+    if pid > 0:
+        os._exit(0)
+
+    # Redirect the three standard file descriptors to /dev/null.
+    devnull_fd = os.open(os.devnull, os.O_RDWR)
+    try:
+        for fd in (0, 1, 2):
+            os.dup2(devnull_fd, fd)
+    finally:
+        os.close(devnull_fd)
+
+
 def _setup_signal_handlers() -> None:
     """Register signal handlers for graceful shutdown."""
     shutdown_in_progress = False
@@ -55,6 +100,20 @@ def _setup_signal_handlers() -> None:
 
     if sys.platform != "win32":
         signal.signal(signal.SIGTERM, handle_shutdown)
+
+        _sighup = getattr(signal, "SIGHUP", None)
+        if _sighup is not None:
+
+            def handle_sighup(signum: int, frame: Any) -> None:
+                logger.info("Received SIGHUP — reloading configuration")
+                if reload_settings():
+                    configure_logging(settings["logging_level"], settings["logging_config"])
+                    sse_refresh()
+                    stdio_refresh()
+                    logger.info("Configuration reloaded")
+
+            signal.signal(_sighup, handle_sighup)
+
     signal.signal(signal.SIGINT, handle_shutdown)
 
 
@@ -170,6 +229,12 @@ def main() -> None:
     _setup_signal_handlers()
     configure_logging(settings["logging_level"], settings["logging_config"])
 
+    if settings.get("daemonize"):
+        _daemonize()
+
+    pid_file = settings.get("pid_file")
+    if pid_file:
+        _write_pid_file(pid_file)
     try:
         anyio.run(start_app)
     except KeyboardInterrupt:
@@ -197,6 +262,9 @@ def main() -> None:
             logger.critical(f"Application failed to start: {e}")
             traceback.print_exc()
             sys.exit(1)
+    finally:
+        if pid_file:
+            _remove_pid_file(pid_file)
 
 
 if __name__ == "__main__":

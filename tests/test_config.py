@@ -602,6 +602,15 @@ def test_validate_settings_valid_wrapper() -> None:
     assert warnings == []
 
 
+def test_validate_settings_daemonize_with_stdio_is_error() -> None:
+    """daemonize=True combined with stdio transport is a configuration error."""
+    from mcp_stdio_bridge.config import validate_settings, DEFAULT_SETTINGS
+
+    final = {**DEFAULT_SETTINGS, "command": "echo", "transport": "stdio", "daemonize": True}
+    errors, _ = validate_settings(final)
+    assert any("daemonize" in e for e in errors)
+
+
 # ---------------------------------------------------------------------------
 # check_config
 # ---------------------------------------------------------------------------

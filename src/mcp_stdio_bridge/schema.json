@@ -135,7 +135,9 @@
     "retry_multiplier": { "type": "number", "default": 2.0, "description": "Retry delay multiplier." },
     "cwd": { "type": ["string", "null"], "default": null, "description": "Global working directory for subprocesses." },
     "env_allowlist": { "type": ["array", "null"], "items": { "type": "string" } },
-    "env_denylist": { "type": "array", "items": { "type": "string" } }
+    "env_denylist": { "type": "array", "items": { "type": "string" } },
+    "pid_file": { "type": ["string", "null"], "default": null, "description": "Path to write the process PID on startup. Removed on clean exit." },
+    "daemonize": { "type": "boolean", "default": false, "description": "Detach from the controlling terminal and run as a background daemon (POSIX only, incompatible with stdio transport)." }
   },
   "oneOf": [
     { "required": ["command"], "properties": { "mode": { "const": "proxy" } } },

@@ -413,3 +413,62 @@ async def test_handle_proxy_sse_send_worker_exception() -> None:
         await _handle_proxy_sse(mock_scope, AsyncMock(side_effect=disconnect_later), raising_send)
 
     assert send_calls > 2
+
+
+@pytest.mark.anyio
+async def test_proxy_asgi_app_405_messages_wrong_method() -> None:
+    """GET /messages/ returns 405, not 404 — path is known but method is wrong."""
+    from mcp_stdio_bridge.config import settings
+
+    settings["api_key"] = None
+    mock_scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/messages/",
+        "headers": [],
+        "query_string": b"",
+    }
+    mock_send = AsyncMock()
+    await proxy_asgi_app(mock_scope, AsyncMock(), mock_send)
+    assert any(
+        c[0][0].get("status") == 405
+        for c in mock_send.call_args_list
+        if c[0][0]["type"] == "http.response.start"
+    )
+
+
+@pytest.mark.anyio
+async def test_handle_proxy_sse_bridge_exception_increments_attempts() -> None:
+    """Bridge error increments retry_manager.attempts (lines 237-239)."""
+    from mcp_stdio_bridge.config import settings
+    from mcp_stdio_bridge.transport import sse_proxy
+
+    settings["command"] = "echo"
+    sse_proxy.connection_semaphore = None
+    sse_proxy.retry_manager = None
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 123
+    mock_proc.returncode = 1
+
+    class MockCtx:
+        async def __aenter__(self) -> Any:
+            return mock_proc
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    with (
+        patch("anyio.open_process", return_value=MockCtx()),
+        patch(
+            "mcp_stdio_bridge.transport.sse_proxy.bridge_streams",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("simulated bridge failure"),
+        ),
+    ):
+        await _handle_proxy_sse(
+            {"type": "http", "client": ["127.0.0.1", 1234]}, AsyncMock(), AsyncMock()
+        )
+
+    assert sse_proxy.retry_manager is not None
+    assert sse_proxy.retry_manager.attempts == 1

@@ -60,6 +60,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "API_KEY",
     ],
     "command": None,
+    "pid_file": None,
+    "daemonize": False,
     "verbose": False,
 }
 
@@ -129,6 +131,11 @@ def parse_args() -> argparse.Namespace:
         "-o",
         metavar="FILE",
         help="Write generated client config to FILE instead of stdout",
+    )
+    parser.add_argument("--pid-file", metavar="FILE", help="Write process PID to FILE on startup")
+    parser.add_argument(
+        "--daemonize", "-D", action="store_true",
+        help="Detach from terminal and run as a daemon (POSIX only)",
     )
     parser.add_argument(
         "--check-config", action="store_true", help="Validate configuration and exit"
@@ -294,6 +301,9 @@ def validate_settings(final: Dict[str, Any]) -> tuple[list[str], list[str]]:
         for key in sse_only_keys:
             if final.get(key) != DEFAULT_SETTINGS.get(key):
                 warnings.append(f"'{key}' is set but ignored in stdio transport mode")
+
+    if final.get("daemonize") and final.get("transport") == "stdio":
+        errors.append("'daemonize' is incompatible with stdio transport")
 
     if (
         final.get("env_allowlist") is not None
