@@ -9,7 +9,8 @@ A generic, professional-grade gateway that bridges Model Context Protocol (MCP) 
 - **Dual Transport Support**: Run over **SSE (HTTP/HTTPS)** for remote access or **Stdio** for local use by MCP clients.
 - **100% Test Coverage**: Exhaustive test suite ensuring stability across all transports, operational modes, and failure paths.
 - **YAML Configuration**: Easily manage settings via a central config file.
-- **Dynamic Configuration Reload**: Opt-in feature to live-reload settings from `config.yaml` without dropping active sessions.
+- **Dynamic Configuration Reload**: Opt-in feature to live-reload settings from `config.yaml` without dropping active sessions — via the `--watch-config` file watcher or by sending `SIGHUP` on POSIX systems.
+- **Daemon Mode**: `--daemonize` performs a POSIX double-fork to detach from the terminal; pair with `--pid-file` for init system and supervisor integration.
 - **Idle Session Timeouts**: Automatically terminates stalled proxy and wrapper sessions to prevent resource leaks.
 - **Process Management**: Automatically spawns, manages, and cleans up subprocesses for bridging.
 
@@ -117,9 +118,14 @@ docker-compose up -d
 | `--no-security-headers` | Disable default security headers | `False` |
 | `--cors-origins` | CORS origins (space-separated) | `["*"]` |
 | `--idle-timeout` | Idle timeout for proxy sessions (seconds) | `3600` |
+| `--cwd` | Global working directory for all subprocesses | `None` |
+| `--max-retries` | Max subprocess restart attempts in proxy mode (0 = disabled) | `0` |
+| `--retry-delay` | Initial delay between retries in seconds | `1.0` |
+| `--retry-max-delay` | Maximum retry delay cap in seconds | `60.0` |
+| `--retry-multiplier` | Exponential backoff growth factor | `2.0` |
 | `--env-allowlist` | Allowlist of environment variables | `None` |
 | `--env-denylist` | Denylist of environment variables | `[...]` |
-| `--log-level` | Set the logging level (DEBUG, INFO, etc.) | `INFO` |
+| `--logging-level` | Set the logging level (DEBUG, INFO, etc.) | `INFO` |
 | `--logging-config` | Path to a custom logging config file | `None` |
 | `--watch-config` | Enable dynamic config reloading | `False` |
 | `--rate-limit-requests` | Max requests per client per window (0 = disabled) | `0` |
@@ -127,8 +133,12 @@ docker-compose up -d
 | `--version` | Display the application version and exit | |
 | `-v`, `--verbose` | Enable verbose logging | `False` |
 | `--generate-api-key` | Print a random URL-safe API key and exit | |
+| `--generate-config` | Print a minimal YAML config built from the supplied CLI flags and exit | |
 | `--generate-client-config` | Generate a JSON config snippet for an MCP client and exit (choices: `claude-desktop`, `claude-code`, `cursor`, `gemini`, `vscode`, `copilot`) | |
 | `-o`, `--output` | Write `--generate-client-config` output to FILE instead of stdout | |
+| `--pid-file FILE` | Write the process PID to FILE on startup; removed on clean exit or crash | |
+| `--daemonize`, `-D` | Detach from the terminal and run as a daemon (POSIX only; incompatible with stdio transport) | `False` |
+| `--reload` | Send `SIGHUP` to a running bridge identified by `--pid-file` and exit (POSIX only) | |
 | `--check-config` | Validate configuration and exit (like `nginx -t`) | |
 | `--warnings-as-errors` | Treat config warnings as errors (use with `--check-config`) | |
 

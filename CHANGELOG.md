@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-05-01
+
+### Added
+
+- **PID File**: `--pid-file FILE` writes the process PID to a file on startup and
+  removes it on clean exit or crash. The corresponding `pid_file` config key is also
+  supported. Enables supervisor and init-system integration (e.g. `kill -TERM
+  $(cat /var/run/mcp-bridge.pid)`).
+- **Daemon Mode**: `--daemonize` / `-D` performs a POSIX double-fork, detaches from
+  the controlling terminal, and redirects stdin/stdout/stderr to `/dev/null`. Windows
+  receives a warning and continues in the foreground. Incompatible with stdio
+  transport (caught by `--check-config`). Pairs naturally with `--pid-file` and a
+  systemd `Type=forking` unit or an rc.d `background_proc` flag.
+- **SIGHUP Config Reload**: On POSIX systems the bridge now installs a `SIGHUP`
+  handler that triggers an on-demand configuration reload — the same code path used
+  by `--watch-config`, but driven by `kill -HUP <pid>` rather than a polling loop.
+  Useful when you want deterministic, immediate reloads without the overhead of a
+  background watcher thread.
+- **Reload Helper**: `--reload` reads the PID from `--pid-file`, verifies the
+  process is alive with a zero-signal probe, then sends `SIGHUP`. Exits 0 on
+  success, 1 on any error (no PID file configured, stale PID, permission denied).
+  Emits a clear error on Windows where `SIGHUP` does not exist. Designed for use
+  in `ExecReload=` systemd directives and rc.d reload targets.
+
+### Fixed
+
+- **HTTP 405 for Wrong-Method Requests**: `POST /sse` and non-`POST` requests to
+  `/messages/` now return `405 Method Not Allowed` instead of `404 Not Found`. The
+  MCP Streamable HTTP transport probes `POST /sse` before falling back to the legacy
+  SSE handshake; a 404 was semantically incorrect since the path is valid.
+- **CORS OPTIONS Preflight**: `OPTIONS` requests are answered with `204 No Content`
+  and the appropriate `Access-Control-Allow-*` headers before authentication is
+  checked, allowing browser-hosted clients to negotiate credentials.
+- **404 Warning Logging**: Requests to truly unknown paths now log a `WARNING`
+  with the method and path for easier debugging.
+
 ## [1.4.0] - 2026-04-29
 
 ### Added
@@ -222,6 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker support** — `Dockerfile` and `docker-compose.yaml` included.
 - **100% test coverage** across all modules.
 
+[1.5.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.5.0
 [1.4.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.4.0
 [1.3.1]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.3.1
 [1.3.0]: https://github.com/hackagadget/mcp-stdio-bridge/releases/tag/v1.3.0
