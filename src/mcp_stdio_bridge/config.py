@@ -138,6 +138,11 @@ def parse_args() -> argparse.Namespace:
         help="Detach from terminal and run as a daemon (POSIX only)",
     )
     parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Send SIGHUP to a running bridge process identified by --pid-file (POSIX only)",
+    )
+    parser.add_argument(
         "--check-config", action="store_true", help="Validate configuration and exit"
     )
     parser.add_argument(

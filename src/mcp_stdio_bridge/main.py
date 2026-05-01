@@ -86,6 +86,48 @@ def _daemonize() -> None:
         os.close(devnull_fd)
 
 
+def _reload_process(pid_file: str | None) -> None:
+    """Send SIGHUP to a running bridge process identified by pid_file."""
+    if sys.platform == "win32":
+        print("--reload is not supported on Windows (no SIGHUP)", file=sys.stderr)
+        sys.exit(1)
+
+    if not pid_file:
+        print(
+            "--reload requires a PID file; set --pid-file or pid_file in config",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        with open(pid_file, encoding="utf-8") as f:
+            pid = int(f.read().strip())
+    except FileNotFoundError:
+        print(f"PID file not found: {pid_file}", file=sys.stderr)
+        sys.exit(1)
+    except (ValueError, OSError) as e:
+        print(f"Could not read PID file {pid_file!r}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        print(f"No process with PID {pid} — stale PID file?", file=sys.stderr)
+        sys.exit(1)
+    except PermissionError:
+        pass  # process exists but we lack permission for the probe; try the signal anyway
+
+    sighup = getattr(signal, "SIGHUP", None)
+    try:
+        os.kill(pid, sighup)  # type: ignore[arg-type]
+        print(f"Sent SIGHUP to process {pid}", file=sys.stderr)
+    except (ProcessLookupError, PermissionError) as e:
+        print(f"Could not signal process {pid}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    sys.exit(0)
+
+
 def _setup_signal_handlers() -> None:
     """Register signal handlers for graceful shutdown."""
     shutdown_in_progress = False
@@ -226,6 +268,10 @@ def main() -> None:
         sys.exit(check_config(args, args.warnings_as_errors))
 
     finalize_settings(args)
+
+    if getattr(args, "reload", False):
+        _reload_process(settings.get("pid_file"))
+
     _setup_signal_handlers()
     configure_logging(settings["logging_level"], settings["logging_config"])
 

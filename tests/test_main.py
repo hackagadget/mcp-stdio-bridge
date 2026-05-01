@@ -297,3 +297,137 @@ def test_main_no_daemonize_by_default() -> None:
     ):
         cli_main()
     assert not mock_daemon.called
+
+
+# ---------------------------------------------------------------------------
+# _reload_process tests
+# ---------------------------------------------------------------------------
+
+def test_reload_process_windows() -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    with patch("sys.platform", "win32"):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(None)
+    assert exc.value.code == 1
+
+
+def test_reload_process_no_pid_file() -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    with patch("sys.platform", "linux"):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(None)
+    assert exc.value.code == 1
+
+
+def test_reload_process_pid_file_not_found(tmp_path: Path) -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    with patch("sys.platform", "linux"):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(str(tmp_path / "missing.pid"))
+    assert exc.value.code == 1
+
+
+def test_reload_process_bad_pid_content(tmp_path: Path) -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    pid_file = tmp_path / "bridge.pid"
+    pid_file.write_text("not-a-number")
+    with patch("sys.platform", "linux"):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(str(pid_file))
+    assert exc.value.code == 1
+
+
+def test_reload_process_stale_pid(tmp_path: Path) -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    pid_file = tmp_path / "bridge.pid"
+    pid_file.write_text("99999999")
+    with (
+        patch("sys.platform", "linux"),
+        patch("os.kill", side_effect=ProcessLookupError),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(str(pid_file))
+    assert exc.value.code == 1
+
+
+def test_reload_process_permission_error_probe(tmp_path: Path) -> None:
+    """PermissionError on the zero-signal probe is tolerated; we still try SIGHUP."""
+    from mcp_stdio_bridge.main import _reload_process
+
+    pid_file = tmp_path / "bridge.pid"
+    pid_file.write_text("1234")
+
+    kill_calls: list[tuple[int, int]] = []
+
+    def fake_kill(pid: int, sig: int) -> None:
+        kill_calls.append((pid, sig))
+        if sig == 0:
+            raise PermissionError("no permission")
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("signal.SIGHUP", 1, create=True),
+        patch("os.kill", side_effect=fake_kill),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(str(pid_file))
+    assert exc.value.code == 0
+    assert (1234, 1) in kill_calls
+
+
+def test_reload_process_success(tmp_path: Path) -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    pid_file = tmp_path / "bridge.pid"
+    pid_file.write_text("5678")
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("signal.SIGHUP", 1, create=True),
+        patch("os.kill"),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(str(pid_file))
+    assert exc.value.code == 0
+
+
+def test_reload_process_sighup_fails(tmp_path: Path) -> None:
+    from mcp_stdio_bridge.main import _reload_process
+
+    pid_file = tmp_path / "bridge.pid"
+    pid_file.write_text("5678")
+
+    def fake_kill(pid: int, sig: int) -> None:
+        if sig != 0:
+            raise PermissionError("not allowed")
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("signal.SIGHUP", 1, create=True),
+        patch("os.kill", side_effect=fake_kill),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            _reload_process(str(pid_file))
+    assert exc.value.code == 1
+
+
+def test_main_reload_flag(tmp_path: Path) -> None:
+    from mcp_stdio_bridge.main import main as cli_main
+
+    pid_file = tmp_path / "bridge.pid"
+    pid_file.write_text("5678")
+    argv = ["mcp-stdio-bridge", "--reload", "--pid-file", str(pid_file)]
+    with (
+        patch("sys.argv", argv),
+        patch("mcp_stdio_bridge.main._reload_process") as mock_reload,
+    ):
+        mock_reload.side_effect = SystemExit(0)
+        with pytest.raises(SystemExit) as exc:
+            cli_main()
+    assert exc.value.code == 0
+    mock_reload.assert_called_once()
